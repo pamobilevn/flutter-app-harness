@@ -1,0 +1,94 @@
+// Notifier unit tests: copy to test/features/<feature>/<feature>_notifier_test.dart.
+// Gate R11 needs >= 3 unit tests in total. Write one file per non-trivial notifier, covering
+// load, mutate + persist, and the failure path.
+//
+// ADAPT (every <...> must be replaced; the file does not compile until it is):
+//   <app_pkg>   Dart package name = app_slug in snake_case (pubspec `name:`), e.g. habit_tracker
+//   <feature>   feature folder under lib/features/, e.g. habits
+//   <Feature>   class prefix of its repository, e.g. Habit -> HabitRepository
+//   <Item>      the model class; build `sample` with real field values (no lorem/fake text)
+//   <item_file> the model's file name under data/, e.g. habit
+// Assumes the generator §5b shape: repository with loadAll()/saveAll(), exposed through
+// <feature>RepositoryProvider, and an AsyncNotifier <feature>Provider with add(<Item>).
+//
+// Pattern: the REAL repository over in-memory SharedPreferences, injected through a
+// ProviderContainer override. No interface or mocking package is needed. To simulate a failure,
+// subclass the concrete repository (see docs/app-gotchas.md, Riverpod long-tail).
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:<app_pkg>/features/<feature>/data/<feature>_repository.dart';
+import 'package:<app_pkg>/features/<feature>/data/<item_file>.dart';
+import 'package:<app_pkg>/features/<feature>/presentation/<feature>_notifier.dart';
+
+void main() {
+  late SharedPreferences prefs;
+  final sample = <Item>(/* ADAPT: real constructor arguments */);
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    prefs = await SharedPreferences.getInstance();
+  });
+
+  // A fresh container is a cold start. Two containers over the same prefs = app restart.
+  // retry: null disables Riverpod 3's automatic retry. Otherwise a failing provider stays in
+  // AsyncLoading for ~40 s of backoff and `.future` never completes inside the test timeout.
+  ProviderContainer makeContainer({<Feature>Repository? repository}) {
+    final container = ProviderContainer(
+      retry: (_, _) => null,
+      overrides: [
+        <feature>RepositoryProvider.overrideWithValue(repository ?? <Feature>Repository(prefs)),
+      ],
+    );
+    addTearDown(container.dispose);
+    // Keep autoDispose providers alive between awaits.
+    container.listen(<feature>Provider, (_, _) {});
+    return container;
+  }
+
+  test('starts empty on first launch', () async {
+    final container = makeContainer();
+    expect(await container.read(<feature>Provider.future), isEmpty);
+  });
+
+  test('add shows immediately and survives a restart', () async {
+    final first = makeContainer();
+    await first.read(<feature>Provider.future);
+    await first.read(<feature>Provider.notifier).add(sample);
+    expect(first.read(<feature>Provider).requireValue, [sample]);
+
+    final afterRestart = makeContainer(); // new providers, same storage
+    expect(await afterRestart.read(<feature>Provider.future), [sample]);
+  });
+
+  test('load failure surfaces as AsyncError (screen shows ErrorView + Retry)', () async {
+    final container = makeContainer(repository: _FailingLoadRepository(prefs));
+    await expectLater(container.read(<feature>Provider.future), throwsA(isA<Exception>()));
+    expect(container.read(<feature>Provider).hasError, isTrue);
+  });
+
+  test('failed save rolls back the optimistic add and rethrows', () async {
+    final container = makeContainer(repository: _FailingSaveRepository(prefs));
+    await container.read(<feature>Provider.future);
+    await expectLater(
+      container.read(<feature>Provider.notifier).add(sample),
+      throwsA(isA<Exception>()),
+    );
+    expect(container.read(<feature>Provider).requireValue, isEmpty);
+  });
+}
+
+class _FailingLoadRepository extends <Feature>Repository {
+  _FailingLoadRepository(super.prefs);
+
+  @override
+  Future<List<<Item>>> loadAll() async => throw Exception('storage unavailable');
+}
+
+class _FailingSaveRepository extends <Feature>Repository {
+  _FailingSaveRepository(super.prefs);
+
+  @override
+  Future<void> saveAll(List<<Item>> items) async => throw Exception('disk full');
+}

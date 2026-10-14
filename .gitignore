@@ -1,0 +1,9 @@
+.DS_Store
+secrets/
+credentials/
+*.jks
+*.p8
+*.p12
+key.properties
+play-store-key.json
+sheets-key.json

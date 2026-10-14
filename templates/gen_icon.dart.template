@@ -1,0 +1,109 @@
+// tool/gen_icon.dart — generates the app icon + splash logo from one shared
+// painter, so the launcher icon, native splash, and in-app logo stay visually
+// consistent. Pure Dart (uses package:image), run with: `dart run tool/gen_icon.dart`.
+//
+// The generator adapts the color/glyph constants below to the project's
+// design_tokens. The ICON is fully OPAQUE (no alpha) — App Store rejects iOS
+// icons with an alpha channel. The SPLASH logo keeps alpha (it's composited on
+// the native-splash background color, which must match design Background).
+//
+// Add `image: ^4.0.0` to dev_dependencies.
+
+import 'dart:io';
+import 'dart:math' as math;
+import 'package:image/image.dart' as img;
+
+// >>> generator fills these from design_tokens (RGB 0–255) and app_name <<<
+const List<int> kBg = [13, 17, 23]; //        __BG_RGB__       (icon background)
+const List<int> kPrimary = [30, 136, 229]; //  __PRIMARY_RGB__  (motif base)
+const List<int> kAccent = [255, 138, 61]; //   __ACCENT_RGB__   (motif accent)
+const String kGlyph = 'S'; //                  __GLYPH__        (first letter of app_name)
+
+img.ColorRgb8 _rgb(List<int> c) => img.ColorRgb8(c[0], c[1], c[2]);
+img.ColorRgba8 _rgba(List<int> c, int a) => img.ColorRgba8(c[0], c[1], c[2], a);
+
+/// Draw the shared motif (a simple layered orb + glyph) centered on [im].
+///
+/// [fit] scales the motif about the center — use `<1` for the Android
+/// adaptive-icon layers so the content stays inside the ~66dp safe zone (of the
+/// 108dp canvas) and the launcher mask doesn't crop/"zoom" it. If [mono] is set,
+/// draw a single flat-color silhouette (for the Android 13+ themed-icon layer).
+void _paintMotif(img.Image im, int size, {double fit = 1.0, List<int>? mono}) {
+  final cx = size ~/ 2, cy = size ~/ 2;
+  final rOuter = (size * 0.34 * fit).round();
+  final rInner = (size * 0.22 * fit).round();
+  if (mono != null) {
+    img.fillCircle(im, x: cx, y: cy, radius: rOuter, color: _rgb(mono));
+    return; // single-color silhouette; the system tints it (no glyph knockout)
+  }
+  img.fillCircle(im, x: cx, y: cy, radius: rOuter, color: _rgb(kPrimary));
+  img.fillCircle(im, x: cx, y: cy, radius: rInner, color: _rgb(kAccent));
+  // glyph: scaled bitmap font, centered.
+  final font = img.arial48;
+  final scale = (size * 0.012 * fit).clamp(1, 12).toInt();
+  // package:image fonts aren't vector; draw the letter and rely on the orb for
+  // identity. Place near center.
+  img.drawString(im, kGlyph.toUpperCase(),
+      font: font, x: cx - 14 * scale, y: cy - 24 * scale, color: _rgb(kBg));
+}
+
+void main() {
+  // --- App icon: 1024×1024, OPAQUE (numChannels: 3 → no alpha) ---
+  final icon = img.Image(width: 1024, height: 1024, numChannels: 3);
+  img.fill(icon, color: _rgb(kBg));
+  _paintMotif(icon, 1024);
+  Directory('assets/icons').createSync(recursive: true);
+  File('assets/icons/icon.png').writeAsBytesSync(img.encodePng(icon));
+
+  // --- Splash logo: 512×512, transparent (composited on native-splash bg) ---
+  final splash = img.Image(width: 512, height: 512, numChannels: 4);
+  img.fill(splash, color: _rgba(kBg, 0)); // transparent canvas
+  _paintMotif(splash, 512);
+  Directory('assets/images').createSync(recursive: true);
+  File('assets/images/splash.png').writeAsBytesSync(img.encodePng(splash));
+
+  // --- Android adaptive-icon FOREGROUND: 1024×1024, transparent, motif kept
+  //     inside the ~66dp safe zone (fit<1) so the launcher mask doesn't crop or
+  //     "zoom" it. The background is a solid color (adaptive_icon_background),
+  //     not this layer. A full-bleed iOS icon reused here is the classic cause
+  //     of the "icon looks enlarged/cropped on Android" bug. ---
+  final fg = img.Image(width: 1024, height: 1024, numChannels: 4);
+  img.fill(fg, color: _rgba(kBg, 0));
+  _paintMotif(fg, 1024, fit: 0.8);
+  File('assets/icons/icon-fg.png').writeAsBytesSync(img.encodePng(fg));
+
+  // --- Android 13+ THEMED (monochrome) layer: white silhouette on transparent,
+  //     inside the same safe zone; the system tints it to the user's theme.
+  //     Google Play increasingly expects a monochrome layer — without one the
+  //     icon looks out of place among themed icons. ---
+  final monoImg = img.Image(width: 1024, height: 1024, numChannels: 4);
+  img.fill(monoImg, color: _rgba(kBg, 0));
+  _paintMotif(monoImg, 1024, fit: 0.8, mono: const [255, 255, 255]);
+  File('assets/icons/icon-mono.png').writeAsBytesSync(img.encodePng(monoImg));
+
+  Directory('assets/store').createSync(recursive: true);
+  // --- Play hi-res listing icon: 512×512, OPAQUE ---
+  final playIcon = img.Image(width: 512, height: 512, numChannels: 3);
+  img.fill(playIcon, color: _rgb(kBg));
+  _paintMotif(playIcon, 512);
+  File('assets/store/play_icon.png').writeAsBytesSync(img.encodePng(playIcon));
+
+  // --- Play feature graphic: 1024×500, OPAQUE (centered orb motif) ---
+  final feat = img.Image(width: 1024, height: 500, numChannels: 3);
+  img.fill(feat, color: _rgb(kBg));
+  img.fillCircle(feat, x: 512, y: 250, radius: 150, color: _rgb(kPrimary));
+  img.fillCircle(feat, x: 512, y: 250, radius: 95, color: _rgb(kAccent));
+  img.drawString(feat, kGlyph.toUpperCase(), font: img.arial48, x: 492, y: 226, color: _rgb(kBg));
+  File('assets/store/feature_graphic.png').writeAsBytesSync(img.encodePng(feat));
+
+  // sanity: confirm the icon has no alpha
+  final check = img.decodePng(File('assets/icons/icon.png').readAsBytesSync())!;
+  stdout.writeln('icon channels=${check.numChannels} (must be 3, no alpha); wrote '
+      'assets/icons/icon.png, assets/icons/icon-fg.png (adaptive fg, safe-zone), '
+      'assets/icons/icon-mono.png (themed), assets/images/splash.png, '
+      'assets/store/play_icon.png (512), assets/store/feature_graphic.png (1024x500)');
+  if (check.numChannels != 3) {
+    stderr.writeln('ERROR: icon has an alpha channel — App Store will reject it.');
+    exit(1);
+  }
+}

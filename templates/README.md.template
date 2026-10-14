@@ -1,0 +1,67 @@
+# <app_name>
+
+<one-line pitch from the PRD>
+
+A mobile app for iOS and Android built with [Flutter](https://flutter.dev).
+
+## Features
+
+<3-6 bullets: the primary user flows from the PRD, in user language.>
+
+## Tech stack
+
+- **Flutter** (iOS + Android), Material 3 with light/dark themes from design tokens
+- **flutter_riverpod**: state management (`Notifier` / `AsyncNotifier`)
+- **go_router**: navigation, one router in `lib/app/router.dart`
+- **shared_preferences** <+ the PRD's storage: drift / sqflite / flutter_secure_storage>: local persistence behind repositories
+- <dio | Firebase: only if the app has a backend>
+- **flutter_localizations** + **intl**: localization (<locales>)
+
+## Architecture
+
+Feature-first layout:
+
+```
+lib/
+  main.dart                 startup: error handlers -> storage -> orientation -> runApp
+  app/                      App (MaterialApp.router), router, bootstrap (opens storage)
+  core/
+    config/app_config.dart  every tunable constant (timeouts, page sizes, limits)
+    theme/                  design tokens + light/dark ThemeData
+    services/               shared clients and storage providers
+    widgets/                AsyncValueView, EmptyView, ErrorView
+  features/<feature>/
+    data/                   models + repository (the only code that touches storage/network)
+    presentation/           screens, widgets, notifiers
+  l10n/                     app_<locale>.arb
+```
+
+Widgets read state from Riverpod providers. Notifiers call repositories. Repositories own
+storage and network access. Tests swap a repository through `ProviderScope` /
+`ProviderContainer` overrides.
+
+## Run
+
+```bash
+flutter pub get
+flutter run
+```
+
+## Test & analyze
+
+```bash
+flutter analyze
+flutter test                                    # unit + widget tests
+flutter test integration_test -d <device-id>    # primary flow on a simulator/emulator
+```
+
+## Build (release)
+
+```bash
+flutter build ipa          # iOS
+flutter build appbundle    # Android
+```
+
+## License
+
+See [LICENSE](LICENSE).

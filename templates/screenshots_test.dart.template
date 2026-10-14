@@ -1,0 +1,162 @@
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:<__APP_SLUG__>/app/app.dart';
+import 'package:<__APP_SLUG__>/app/bootstrap.dart';
+
+/// Drives the app through the PRD's primary flows with seeded, realistic demo
+/// data and captures store screenshots at the running device's resolution.
+/// Run once per locale in `config.locales`:
+///
+///   SCREENSHOT_DIR=build/screenshots/ios/en-US flutter drive \
+///     --driver=test_driver/integration_test.dart \
+///     --target=integration_test/screenshots_test.dart \
+///     -d DEVICE_ID \
+///     --dart-define=SCREENSHOT_LOCALE=en \
+///     --dart-define=screenshots=true
+///
+/// `screenshots=true` puts the app in screenshot mode: no ads, no ATT/UMP
+/// consent, no runtime-permission or rating prompts (see docs/app-gotchas.md →
+/// Store screenshots), so every frame is clean.
+///
+/// Boots like main() does — same storageOverrides(), same App — but never calls
+/// app.main() / bootstrap(): those replace FlutterError.onError, and the test
+/// binding fails any test that leaves that handler changed.
+///
+/// Devices: 6.9" iPhone simulator, 13" iPad simulator (only when
+/// config.device_family is universal), 16:9 Android phone emulator.
+void main() {
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  /// Settle the frame then capture a named screenshot.
+  ///
+  /// Pumps a couple of real frames so [takeScreenshot] reflects the current
+  /// composited surface. On Android the surface is converted to an image once
+  /// up front (see [convertFlutterSurfaceToImage] below) — converting again
+  /// here would trigger an assertion.
+  Future<void> shot(WidgetTester tester, String name) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump();
+    await binding.takeScreenshot(name);
+  }
+
+  /// Settle without [pumpAndSettle] — it times out on looping animations
+  /// (progress indicators, shimmer skeletons, animated illustrations).
+  Future<void> wait(WidgetTester tester, [int ms = 900]) async {
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(Duration(milliseconds: ms));
+  }
+
+  /// Navigate by go_router location. The same test runs in every locale, so
+  /// never find widgets by translated text — use route paths, Keys, or icons.
+  /// (An existing app on another router: navigate with its API or by Key
+  /// taps instead, and drop this helper + the go_router import.)
+  Future<void> go(WidgetTester tester, String location) async {
+    GoRouter.of(tester.element(find.byType(Scaffold).first)).go(location);
+    await wait(tester);
+  }
+
+  testWidgets('capture store screenshots', (tester) async {
+    // Locale for this capture run, injected via --dart-define=SCREENSHOT_LOCALE=<code>.
+    // (Platform.environment reflects the host, not the device — use fromEnvironment.)
+    const locale = String.fromEnvironment(
+      'SCREENSHOT_LOCALE',
+      defaultValue: 'en',
+    );
+
+    // Screenshot mode is a compile-time flag; without it ads, consent, and
+    // permission prompts can land in the store frames.
+    expect(
+      const bool.fromEnvironment('screenshots'),
+      isTrue,
+      reason: 'run with --dart-define=screenshots=true',
+    );
+
+    // Reset storage so every run starts from the same state (runs share one
+    // simulator — without the reset, the previous locale's records leak in).
+    // TODO(generator): also delete the DB/file if the app uses drift/sqflite.
+    await (await SharedPreferences.getInstance()).clear();
+
+    final container = ProviderContainer(
+      overrides: await storageOverrides(),
+      retry: (_, _) => null,
+    );
+    addTearDown(container.dispose);
+
+    // TODO(generator): seed realistic demo data in `locale` through the app's
+    // repositories (same code path as a user), mark onboarding as done, and
+    // make the data look lived-in: 6–10 records with varied names, dates, and
+    // states, plus whatever the detail and stats screens need to look full.
+    // Skip this block only if the app already seeds the same data itself when
+    // `screenshots=true`. Example:
+    //   final repo = container.read(habitRepositoryProvider);
+    //   await repo.saveAll(demoHabits(locale));
+    //   await repo.setOnboardingDone(true);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(container: container, child: const App()),
+    );
+
+    // Generous warm-up so the first composited frame is ready.
+    await wait(tester, 1500);
+    await wait(tester, 1000);
+
+    // TODO(generator): force the UI language to `locale` so captures do not
+    // depend on the simulator's system language. Preferred: app_config.dart
+    // exposes the SCREENSHOT_LOCALE dart-define (null unless screenshot mode)
+    // and lib/app/app.dart passes it as `locale:` to MaterialApp.router — then
+    // nothing is needed here. If the app has a language setting instead:
+    //   container.read(localeProvider.notifier).set(Locale(locale));
+    await wait(tester, 700);
+
+    // Android: convert the render surface to an image ONCE so takeScreenshot
+    // works. Widget-tree taps still dispatch normally; the image re-renders as
+    // we navigate.
+    if (Platform.isAndroid) {
+      await binding.convertFlutterSurfaceToImage();
+      await tester.pump();
+    }
+
+    // -------------------------------------------------------------------------
+    // Screen list — one shot per PRD primary flow, in the order a new user
+    // meets them. Keep zero-padded two-digit prefixes so fastlane and App
+    // Store Connect upload them in order. 5 shots fit both stores
+    // (App Store 1–10, Play 2–8).
+    // -------------------------------------------------------------------------
+
+    // 01 — Home: the seeded main list / dashboard (the app opens here).
+    await shot(tester, '01_home');
+
+    // TODO(generator): 02 — the app's key feature in use (primary flow #1),
+    // e.g. the create/edit screen with a realistic entry filled in.
+    //   await tester.tap(find.byKey(const Key('home_add_fab')));
+    //   await wait(tester);
+    //   await tester.enterText(find.byKey(const Key('title_field')), 'Morning run');
+    //   await tester.testTextInput.receiveAction(TextInputAction.done);
+    //   await wait(tester);
+    //   await shot(tester, '02_<key_feature>');
+
+    // TODO(generator): 03 — the detail / result screen that shows the outcome
+    // of the key feature (detail view, stats, chart, summary).
+    //   await go(tester, '/habits/<seeded-id>');
+    //   await shot(tester, '03_<detail_or_result>');
+
+    // TODO(generator): 04 — a secondary flow from the PRD (history, calendar,
+    // search, categories, reminders).
+    //   await go(tester, '/<secondary-route>');
+    //   await shot(tester, '04_<secondary>');
+
+    // TODO(generator): 05 — Settings, or the home screen in dark theme if the
+    // app has a theme setting (switch it through the Settings UI like a user,
+    // then return home).
+    //   await go(tester, '/settings');
+    //   await shot(tester, '05_settings');
+  });
+}

@@ -1,0 +1,4 @@
+storePassword=<keystore-password>
+keyPassword=<keystore-password>
+keyAlias=<key-alias>
+storeFile=<absolute-keystore-path>

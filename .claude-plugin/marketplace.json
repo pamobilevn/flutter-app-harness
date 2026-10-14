@@ -1,0 +1,11 @@
+{
+  "name": "flutter-app-harness",
+  "owner": { "name": "PAMG" },
+  "plugins": [
+    {
+      "name": "flutter-app-harness",
+      "source": ".",
+      "description": "Idea-to-store harness for Flutter mobile apps."
+    }
+  ]
+}

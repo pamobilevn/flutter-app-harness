@@ -1,0 +1,74 @@
+// Integration test of the PRIMARY user flow: copy to integration_test/app_test.dart.
+// Needs a booted simulator/emulator (`flutter test` skips this directory):
+//   flutter test integration_test -d <device-id>
+//
+// ADAPT (every <...> must be replaced):
+//   <app_pkg>     Dart package name = app_slug in snake_case
+//   <feature>     feature folder;  <feature>RepositoryProvider as in generator §5b
+//   <flow name>   the PRD's primary flow, e.g. "create a habit and see it on Home"
+//   <primaryActionTooltipKey>, <saveKey>  real ARB keys;  <realistic input>  real user text
+//   <displayField>  the model field that holds the entered text
+//   the steps     one tap/enterText per PRD flow step
+//
+// Boots like main() does: same storageOverrides(), same App. It does not call app.main() /
+// bootstrap(), because those install FlutterError.onError and the test binding fails any test
+// that leaves that handler changed.
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:<app_pkg>/app/app.dart';
+import 'package:<app_pkg>/app/bootstrap.dart';
+import 'package:<app_pkg>/features/<feature>/data/<feature>_repository.dart';
+import 'package:<app_pkg>/l10n/app_localizations.dart';
+
+/// pumpAndSettle times out while a spinner animates, so poll for the finder instead.
+Future<void> pumpUntilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (finder.evaluate().isEmpty) {
+    if (DateTime.now().isAfter(deadline)) fail('Timed out waiting for $finder');
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('primary flow: <flow name>, result is visible and stored', (tester) async {
+    // Start from a fresh install. ADAPT: also delete the DB/file if the app uses drift/sqflite.
+    await (await SharedPreferences.getInstance()).clear();
+
+    await tester.pumpWidget(
+      ProviderScope(overrides: await storageOverrides(), retry: (_, _) => null, child: const App()),
+    );
+    await pumpUntilFound(tester, find.byType(Scaffold));
+    // The app follows the device locale, so read strings from the live tree.
+    final l10n = AppLocalizations.of(tester.element(find.byType(Scaffold).first));
+
+    // 1. Start the primary action.
+    final action = find.byTooltip(l10n.<primaryActionTooltipKey>);
+    await pumpUntilFound(tester, action);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+
+    // 2. Enter realistic input and submit.
+    await tester.enterText(find.byType(TextFormField).first, '<realistic input>');
+    await tester.tap(find.text(l10n.<saveKey>));
+
+    // 3. The result is visible.
+    await pumpUntilFound(tester, find.text('<realistic input>'));
+
+    // 4. The result is stored. Read it back through the repository (storage), not the UI state.
+    final container = ProviderScope.containerOf(tester.element(find.byType(App)));
+    final stored = await container.read(<feature>RepositoryProvider).loadAll();
+    expect(stored.map((e) => e.<displayField>), contains('<realistic input>'));
+
+    expect(tester.takeException(), isNull);
+  });
+}

@@ -1,0 +1,83 @@
+// Widget test for ONE primary screen: copy to test/features/<feature>/<screen>_screen_test.dart.
+// Gate R11 needs >= 1 widget test per primary screen, and at least 2 in total.
+//
+// ADAPT (every <...> must be replaced):
+//   <app_pkg>        Dart package name = app_slug in snake_case
+//   <feature>        feature folder;  <Feature>Repository / <feature>RepositoryProvider as in §5b
+//   <screen>, <Screen>Screen   the screen's file name and widget under test
+//   <emptyKey>, <primaryActionTooltipKey>, <resultKey>  real ARB keys from lib/l10n/
+// Finders use the generated AppLocalizations, never string literals, so the test works for
+// any default_language. If the tapped control navigates (context.goNamed), pump
+// MaterialApp.router with the app's routerProvider instead of `home:`.
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:<app_pkg>/core/theme/app_theme.dart';
+import 'package:<app_pkg>/features/<feature>/data/<feature>_repository.dart';
+import 'package:<app_pkg>/features/<feature>/presentation/<screen>_screen.dart';
+import 'package:<app_pkg>/l10n/app_localizations.dart';
+
+const _locale = Locale('en');
+
+Future<void> pumpScreen(WidgetTester tester, {double textScale = 1.0}) async {
+  SharedPreferences.setMockInitialValues({});
+  final prefs = await SharedPreferences.getInstance();
+  await tester.pumpWidget(
+    ProviderScope(
+      // Riverpod 3 auto-retry keeps a failed provider in AsyncLoading and leaves a pending
+      // timer, which fails a widget test. Repositories own retry (R2), so tests disable it.
+      retry: (_, _) => null,
+      overrides: [<feature>RepositoryProvider.overrideWithValue(<Feature>Repository(prefs))],
+      child: MaterialApp(
+        theme: AppTheme.light,
+        locale: _locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        ),
+        home: const <Screen>Screen(),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+void main() {
+  late AppLocalizations l10n;
+
+  setUpAll(() async {
+    l10n = await AppLocalizations.delegate.load(_locale);
+  });
+
+  testWidgets('first launch shows the empty state with its call to action', (tester) async {
+    await pumpScreen(tester);
+    expect(find.text(l10n.<emptyKey>), findsOneWidget);
+    expect(find.byTooltip(l10n.<primaryActionTooltipKey>), findsOneWidget);
+  });
+
+  testWidgets('primary action is labelled, tappable and does its job', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await pumpScreen(tester);
+
+    // R10: labelled, >= 48x48 dp tap targets, readable contrast (Flutter's built-in guidelines).
+    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    await expectLater(tester, meetsGuideline(androidTapTargetGuideline));
+    // Contrast can false-flag text over an image/gradient; verify that node by hand instead.
+    await expectLater(tester, meetsGuideline(textContrastGuideline));
+
+    await tester.tap(find.byTooltip(l10n.<primaryActionTooltipKey>));
+    await tester.pumpAndSettle();
+    // ADAPT: assert the real outcome (dialog/sheet open, item added, toggle flipped).
+    expect(find.text(l10n.<resultKey>), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('survives 200% text scale without overflow', (tester) async {
+    await pumpScreen(tester, textScale: 2.0);
+    expect(tester.takeException(), isNull); // RenderFlex overflow would surface here
+  });
+}
