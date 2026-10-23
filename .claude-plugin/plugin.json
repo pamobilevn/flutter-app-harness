@@ -1,6 +1,6 @@
 {
   "name": "flutter-app-harness",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Idea-to-store harness for Flutter mobile apps: research (AI idea recommendation), plan, design, contract, generator-evaluator build loop, monetize (AdMob + optional IAP), build, screenshot, submit, retro. Forked from flutter-flame-harness.",
   "author": {
     "name": "PAMG"

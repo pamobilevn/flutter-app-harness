@@ -252,8 +252,9 @@ Each phase skill is responsible for updating `state.md` (including setting `next
 next phase) before returning, following the transition rules in `docs/harness-protocol.md` Section 7.
 
 After each skill returns, **locate the harness again** (the generator may have moved it into
-`<app_slug>/`), re-read `state.md`, and verify that either `updated_at` changed or `next_role`
-advanced compared to the values before dispatch. If neither changed, abort immediately with:
+`<app_slug>/`), re-read `state.md`, and verify that `updated_at`, `next_role`, or `status` changed
+compared to the values before dispatch (a phase that paused counts as progress). If none changed,
+abort immediately with:
 "orchestrator: phase skill `<role>` returned without updating state.md — halting to avoid a
 redispatch loop."
 

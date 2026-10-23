@@ -115,7 +115,8 @@ What must exist:
 **A missing required flag or gate is a blocking finding, not something to patch here** — the
 generator (or monetize, for the ad gate) was supposed to add it, and the build is already uploaded, so editing app code now would leave the uploaded binary out of sync with the
 repo and skip QA. Do not edit the app: pause per **Error Handling and Pausing** with
-`pause_reason: error` and the row `error: screenshots flag/gate missing in <file> — generator must add it (D5), then rebuild`.
+`pause_reason: error`, **`next_role: build`** (protocol §7 — the fix needs a new binary), and the row
+`error: screenshots flag/gate missing in <file> — add it per generator §5a.5 (ads: monetize gate), commit, then --resume to rebuild`.
 
 ### Copy the integration_test template
 
@@ -147,8 +148,9 @@ with the app's real driving code:
   6–10 records with varied names, dates, and states, enough that lists, detail, and stats screens look
   full. The seed lives in `integration_test/` (or in the app's own screenshot-mode seed, if it has
   one), never as widget literals.
-- **Force the locale** to the `SCREENSHOT_LOCALE` dart-define so captures are language-deterministic
-  regardless of the simulator's system language.
+- **Locale** — the template already reports `SCREENSHOT_LOCALE` as the device locale
+  (`tester.platformDispatcher.localesTestValue`), so captures do not depend on the simulator's
+  language. Only an app with its own saved language setting needs it set through that setting.
 - **Screen list = the PRD's primary flows**, in the order a new user meets them, zero-padded two-digit
   prefixes, 5 shots (fits App Store 1–10 and Play 2–8):
   `01_home` (seeded main list / dashboard), `02_<key_feature>` (primary flow #1 in use),
@@ -397,6 +399,8 @@ PNG they find, so a leftover file from an earlier run or another locale silently
 cd <app>
 for entry in en:en-US:en-US ko:ko:ko-KR; do   # ← same list as Phase 2
   IFS=: read -r loc ios play <<< "$entry"
+  ls build/screenshots/ios/"$ios"/*.png build/screenshots/android/"$play"/*.png >/dev/null 2>&1 \
+    || { echo "NO CAPTURE for $entry — old shots kept, re-run Phase 2"; continue; }
   dst="ios/fastlane/screenshots/$ios"
   mkdir -p "$dst"
   find "$dst" -name '*.png' -delete          # drop leftovers from an earlier run
@@ -547,7 +551,7 @@ screenshot flag/gate missing — `pause_reason: error`), write `docs/harness/sta
 ```yaml
 status: paused
 current_phase: screenshot
-next_role: screenshot
+next_role: screenshot         # build for a missing screenshot flag/gate (Phase 1)
 pause_reason: manual_action   # error for a missing screenshot flag/gate (Phase 1)
 updated_at: "<ISO-8601 UTC now>"
 ```

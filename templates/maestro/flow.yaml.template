@@ -7,7 +7,7 @@
 # escape ( ) . + ? *), e.g. "Add habit|Thêm thói quen", so the suite runs in any device language.
 # `point:` taps only on a custom-painted canvas — on a normal widget, needing one is an R10 finding
 # (missing label), not a workaround.
-appId: <__BUNDLE_ID__>
+appId: ${APP_ID}    # set per platform by suite.sh (bundle_id / bundle_id_android)
 name: "F<n> <flow name>"
 tags:
   - flow

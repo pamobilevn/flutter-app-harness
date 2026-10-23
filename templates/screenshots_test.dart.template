@@ -100,6 +100,12 @@ void main() {
     //   await repo.saveAll(demoHabits(locale));
     //   await repo.setOnboardingDone(true);
 
+    // The app follows the device locale: report `locale` as the device's, so the
+    // capture language never depends on the simulator's system language.
+    // (An app with its own saved language setting: set that through its provider.)
+    tester.platformDispatcher.localesTestValue = [Locale(locale)];
+    addTearDown(tester.platformDispatcher.clearLocalesTestValue);
+
     await tester.pumpWidget(
       UncontrolledProviderScope(container: container, child: const App()),
     );
@@ -108,13 +114,6 @@ void main() {
     await wait(tester, 1500);
     await wait(tester, 1000);
 
-    // TODO(generator): force the UI language to `locale` so captures do not
-    // depend on the simulator's system language. Preferred: app_config.dart
-    // exposes the SCREENSHOT_LOCALE dart-define (null unless screenshot mode)
-    // and lib/app/app.dart passes it as `locale:` to MaterialApp.router — then
-    // nothing is needed here. If the app has a language setting instead:
-    //   container.read(localeProvider.notifier).set(Locale(locale));
-    await wait(tester, 700);
 
     // Android: convert the render surface to an image ONCE so takeScreenshot
     // works. Widget-tree taps still dispatch normally; the image re-renders as

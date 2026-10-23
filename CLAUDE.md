@@ -57,6 +57,7 @@ signal** (tests / CI / a validation script), never by self-assessment.
     residual game-term check, stale-name check.
   - `bash scripts/validate-fastlane.sh` — `ruby -c` on the fastlane templates.
   - `bash scripts/test-hook.sh` — the rate-limit stop hook behavior.
+  - `bash scripts/test-suite-sh.sh` — `templates/maestro/suite.sh.template` against stub devices.
 - **`docs/harness-protocol.md` is the single source of truth** for every file schema and the phase
   state machine. Skills **cite** it (DRY) — never redefine schemas. When adding a state transition,
   update protocol §7 **first**, then align the skills.

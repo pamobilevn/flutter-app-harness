@@ -39,7 +39,7 @@ Extract:
 | `bundle_id` | App bundle ID (may be blank — set it here) |
 | `default_language` | The user's conversation language (any ISO 639-1 code, set by the orchestrator); the PRD and all copy are written in it |
 | `developer.company` | Middle segment of the bundle id |
-| `skip_monetize` | `true` → PRD §7 is "none" |
+| `skip_monetize` | `true` → PRD §7 plans no new monetization (update mode: ads/IAP that already ship stay listed) |
 
 If `config.md` does not exist, abort with:
 `app-harness-plan: docs/harness/config.md not found — run the orchestrator to bootstrap first.`
@@ -337,7 +337,7 @@ list it here.)
 
 ## 7. Monetization intent
 
-<If skip_monetize: true → "None — skip_monetize: true.">
+<If monetization.admob_enabled: false and monetization.iap: false → "None — no ads or purchases ship." (update mode: existing ads/IAP stay listed here even when skip_monetize: true)>
 
 Candidate placements (the monetize phase makes the final decision):
 

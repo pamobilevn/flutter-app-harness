@@ -52,14 +52,14 @@ cd "<project_path>"
 test -f pubspec.yaml && test -d lib || echo "NOT A FLUTTER PROJECT"
 grep -q "sdk: flutter" pubspec.yaml || echo "NOT A FLUTTER APP (no flutter sdk dependency)"
 git rev-parse --is-inside-work-tree 2>/dev/null || echo "NOT A GIT REPO"
-git status --porcelain -- . ':!docs/harness'
+git status --porcelain -- . ':!docs/harness' ':!.maestro'
 ```
 
 - Not a Flutter app → abort (`status: paused`, `pause_reason: error`) with the reason.
 - Not a git repository → ask (AskUserQuestion): "Initialize git and commit the current state as the
   baseline?" — the generator works on a branch, so a baseline commit is required. On no → pause
   `manual_action`.
-- Uncommitted changes (outside `docs/harness/`) → ask: commit them as baseline / stash / abort.
+- Uncommitted changes (outside `docs/harness/` and `.maestro/`) → ask: commit them as baseline / stash / abort.
   Never discard them.
 - Then `flutter pub get`. A failing `pub get` is recorded as a finding (and a mandatory fix item),
   not an abort — unless nothing else can run, in which case pause `error` with the output.

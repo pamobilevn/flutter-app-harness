@@ -3,6 +3,40 @@
 All notable changes to flutter-app-harness are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] — 2026-10-23
+
+### Fixed
+- Maestro flows use `appId: ${APP_ID}`; `suite.sh` passes `bundle_id_android` on Android when set.
+- Stop hook pauses only a `running` run — no longer flips `completed` runs or overwrites
+  `manual_action` / `error` pauses with `rate_limit`.
+- `save_repository` reads the local cache first; preferring the durable copy loaded stale data
+  once a durable write had failed.
+- Store screenshots force `SCREENSHOT_LOCALE` in the test (`localesTestValue`) — every locale was
+  captured in the simulator's language.
+- Android `release_notes` lane targets the internal release that exists (production had no
+  release for the version code, so the lane always failed).
+- A new upload keystore's password goes next to the keystore, never over the shared
+  `<credentials_dir>/key.properties`; the gitignore guard also checks `ios/fastlane/certs/*.p12`;
+  the ASC API-key JSON for `download_metadata` lives in a temp file outside the repo.
+- Audit preflight ignores its own `.maestro/` flows.
+- Device log: Android counts only this app's native crash (`Process: <appId>,`); the evaluator
+  reboots the simulator first (every Flutter app is `Runner`). Regression flows name screenshots
+  `R<N>-…` so they never overwrite the `F<n>-` shots.
+- Stop hook: `429` must stand alone (ids contain it), refreshes `updated_at`, logs the phase.
+- State machine: the orchestrator counts a pause as progress; missing contract/handoff aborts
+  leave a resumable `error` pause; resume finds `error:` pause rows; a missing `screenshots` flag
+  pauses with `next_role: build` (protocol §7) and the evaluator now catches it before build.
+- Ads rules (contract R12, plan §7, design slots) key off `monetization.admob_enabled`, not
+  `skip_monetize`.
+- Store: first upload to an unpublished Play app is a draft; `supply init` gets a fresh path;
+  `set_contact_details.rb` runs via the new `contact_details` lane; manual iOS signing touches
+  Release only; `ios/build/` ignored; screenshot placement keeps old shots when a capture is
+  missing; a late version bump goes back to build.
+- Templates: `debugShowCheckedModeBanner: false`; widget tests pump on a 390×844 phone surface.
+
+### Added
+- `scripts/test-suite-sh.sh` (CI): `suite.sh` against stub devices.
+
 ## [0.2.0] — 2026-10-23
 
 ### Added

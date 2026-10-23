@@ -118,11 +118,13 @@ platform :ios do
       filename: "__PROFILE_NAME__.mobileprovision",
       readonly: false,
     )
-    # Manual signing scoped to the Runner target only (Pods frameworks keep
-    # their own settings — a global profile breaks them). Reverted after.
+    # Manual signing scoped to the Runner target's Release config only (Pods keep
+    # their own settings; Debug keeps automatic signing so device runs still work).
+    # It is not reverted: the Release change stays in project.pbxproj.
     update_code_signing_settings(
       use_automatic_signing: false,
       path: "Runner.xcodeproj",
+      build_configurations: ["Release"],
       team_id: TEAM_ID,
       code_sign_identity: "Apple Distribution",
       profile_name: "__PROFILE_NAME__",

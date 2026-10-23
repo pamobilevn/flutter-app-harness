@@ -69,7 +69,7 @@ template `.gitignore` excludes, so append them when missing, then prove every se
 ```bash
 cd <app>
 grep -q play-store-key.json .gitignore 2>/dev/null || { echo; cat <plugin-templates>/gitignore.template; } >> .gitignore
-for f in ios/fastlane/AuthKey_<asc_key_id>.p8 android/fastlane/play-store-key.json android/key.properties; do
+for f in ios/fastlane/AuthKey_<asc_key_id>.p8 ios/fastlane/certs/dist.p12 android/fastlane/play-store-key.json android/key.properties; do
   git check-ignore -q "$f" || { echo "NOT IGNORED: $f"; exit 1; }
 done
 ```
@@ -114,14 +114,15 @@ The keystore lives at `android.keystore_path` (outside the repo, so it survives 
     -storepass "$KS_PASS" -keypass "$KS_PASS" \
     -dname "CN=<developer.first_name> <developer.last_name>, O=<developer.company>"
   printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=%s\n' \
-    "$KS_PASS" "$KS_PASS" "$ALIAS" "$KS" > <credentials_dir>/key.properties
+    "$KS_PASS" "$KS_PASS" "$ALIAS" "$KS" > "${KS%.*}.properties"   # never the shared <credentials_dir>/key.properties
   ```
 
-  Tell the user to back up the keystore + `<credentials_dir>/key.properties` — losing the upload key
+  Tell the user to back up the keystore + its `.properties` file — losing the upload key
   means a Play Console upload-key reset.
 
 **Keystore password source**, in order: an existing `<app>/android/key.properties` (re-run /
-`mode: update`), `<credentials_dir>/key.properties` whose `storeFile` equals `android.keystore_path`,
+`mode: update`), the `.properties` file next to the keystore (`${KS%.*}.properties`),
+`<credentials_dir>/key.properties` whose `storeFile` equals `android.keystore_path`,
 else ask the user with `AskUserQuestion`. Never write the password into `config.md`, the PRD, or any
 committed file.
 
@@ -392,6 +393,9 @@ keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab | g
 cd android
 fastlane internal                   # uploads AAB to the Play Store internal track
 ```
+
+A Play app that has never been published accepts only draft releases (*"Only releases with status
+draft may be created on draft app"*): its first upload is `SUPPLY_RELEASE_STATUS=draft fastlane internal`.
 
 `fastlane internal` calls `upload_to_play_store` with `track: "internal"` and the relative AAB
 path `../build/app/outputs/bundle/release/app-release.aab` (defined in the generated Fastfile).

@@ -2,7 +2,7 @@
 # cover the app (ATT prompt, UMP consent, app-open ad, StoreKit sign-in), then waits for the
 # first screen. Every dismissal is conditional, so it is safe anywhere and repeatedly. It never
 # taps an ad creative — only the close / "Continue to app" controls.
-appId: <__BUNDLE_ID__>
+appId: ${APP_ID}    # set per platform by suite.sh (bundle_id / bundle_id_android)
 ---
 - runFlow:
     when:

@@ -20,6 +20,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///  - Both: a shared_preferences mirror as a fast local cache and as the
 ///    Android Auto Backup payload (belt-and-suspenders).
 ///
+/// Reads prefer the local cache: it is written first on every save, so it is
+/// never older than the durable copy. The durable copy is only read when the
+/// cache is gone (reinstall, new device) — preferring it would load stale data
+/// whenever a durable write had failed (e.g. a blob over Block Store's limit).
+///
 /// The blob is a single JSON string (well under Block Store's ~4KB/entry limit).
 /// Every store call is wrapped in try/catch so a backend failure degrades to the
 /// next tier instead of crashing.
@@ -33,29 +38,24 @@ class SaveRepository {
     iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
   );
 
-  /// Read the raw JSON blob, preferring the durable store and falling back to
-  /// the shared_preferences cache. Returns null when nothing is stored yet.
+  /// Read the raw JSON blob from the local cache, falling back to the durable
+  /// store after a reinstall. Returns null when nothing is stored yet.
   static Future<String?> read() async {
-    String? durable;
     try {
-      if (Platform.isIOS) {
-        durable = await _secure.read(key: _key);
-      } else if (Platform.isAndroid) {
-        durable = await PlayServicesBlockStore.retrieveString(_key);
-      }
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_key);
+      if (cached != null && cached.isNotEmpty) return cached;
+    } catch (e) {
+      debugPrint('SaveRepository cache read failed: $e');
+    }
+
+    try {
+      if (Platform.isIOS) return await _secure.read(key: _key);
+      if (Platform.isAndroid) return await PlayServicesBlockStore.retrieveString(_key);
     } catch (e) {
       debugPrint('SaveRepository durable read failed: $e');
     }
-    if (durable != null && durable.isNotEmpty) return durable;
-
-    // Fallback to the local cache (also the Android Auto Backup payload).
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getString(_key);
-    } catch (e) {
-      debugPrint('SaveRepository cache read failed: $e');
-      return null;
-    }
+    return null;
   }
 
   /// Persist the JSON blob to both the durable store and the local cache.

@@ -27,6 +27,12 @@ export MAESTRO_CLI_NO_ANALYTICS=1
 if xcrun simctl list devices 2>/dev/null | grep -q -- "$DEV"; then IOS=1; else IOS=0; fi
 ADB="adb -s $DEV"
 
+# Flows say `appId: ${APP_ID}`: iOS bundle_id, Android bundle_id_android when set (update mode).
+cfg() { sed -n "s/^$1:[[:space:]]*\"\{0,1\}\([^\"#[:space:]]*\).*/\1/p" "$ROOT/docs/harness/config.md" 2>/dev/null | head -1; }
+APP_ID=$(cfg bundle_id)
+[ $IOS = 1 ] || { A=$(cfg bundle_id_android); [ -z "$A" ] || APP_ID=$A; }
+[ -n "$APP_ID" ] || { echo "no bundle_id in docs/harness/config.md"; exit 64; }
+
 # Flows: the arguments, else every flow; dark / xxxl keep only flows tagged `ui`.
 [ $# -gt 0 ] || set -- "$ROOT"/.maestro/flows/*.yaml
 FLOWS=()
@@ -59,7 +65,6 @@ case "$MODE" in
 esac
 
 # Device log for the console check. A log with no line from the app means capture broke.
-APPID=$(sed -n 's/^appId: *//p' "$ROOT/.maestro/subflows/ready.yaml" 2>/dev/null | head -1)
 if [ $IOS = 1 ]; then
   xcrun simctl spawn "$DEV" log stream --level debug --style compact --predicate 'process == "Runner"' > "$LOG" 2>&1 &
 else
@@ -70,14 +75,15 @@ LOGPID=$!
 fail=0
 for f in "${FLOWS[@]}"; do
   echo "== $(basename "$f") [$MODE]"
-  maestro --device "$DEV" test --test-output-dir "$OUT" "$f" || { echo "FAIL $(basename "$f")"; fail=$((fail + 1)); }
+  maestro --device "$DEV" test -e APP_ID="$APP_ID" --test-output-dir "$OUT" "$f" || { echo "FAIL $(basename "$f")"; fail=$((fail + 1)); }
 done
 
 find "$OUT" -path '*/takeScreenshot/*.png' | while read -r p; do cp "$p" "$SHOTS/$PREFIX-$(basename "$p")"; done
 sleep 2   # let the log stream flush
-if [ $IOS = 1 ]; then grep -q 'Runner\[' "$LOG"; else grep -qF "${APPID:-<none>}" "$LOG"; fi \
+if [ $IOS = 1 ]; then grep -q 'Runner\[' "$LOG"; else grep -qF "$APP_ID" "$LOG"; fi \
   || echo "FAIL log: no app line in $LOG — log capture is broken, the console check cannot pass"
-grep -nE "EXCEPTION CAUGHT|Unhandled Exception|overflowed by|setState\(\) called after dispose|FATAL EXCEPTION" "$LOG" \
+# Android logcat is device-wide: count a native crash only when it names this app's process.
+grep -nE "EXCEPTION CAUGHT|Unhandled Exception|overflowed by|setState\(\) called after dispose|Process: $APP_ID," "$LOG" \
   && echo "FAIL console: errors in $LOG (HG8)"
 echo "flows: $(( ${#FLOWS[@]} - fail ))/${#FLOWS[@]} passed | screenshots: $SHOTS/$PREFIX-* | maestro output: $OUT"
 exit $fail

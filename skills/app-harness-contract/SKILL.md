@@ -38,7 +38,7 @@ Extract:
 | `device_family` | R6 / R8 — phone vs universal (iPad) |
 | `backend` | R2 — N/A when `local` and the PRD makes no network call |
 | `default_language`, `locales` | Hard Gate 6, R5 display name, R12 usage strings |
-| `skip_monetize` | R12 — monetization brings ATT unless skipped |
+| `monetization.admob_enabled` | R12 — ads bring ATT (never decided from `skip_monetize`) |
 | `strict_mode` | If `true`, run `--strict` negotiation; if `false` (or absent), run default 1-pass |
 
 ### 2. Read the latest PRD

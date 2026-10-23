@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # android/fastlane/set_contact_details.rb — sets the Play Store listing contact
 # email + website via the Android Publisher API (supply has no field for these).
-# Run: `cd android && ruby fastlane/set_contact_details.rb`.
+# Run: `cd android && fastlane contact_details` (fastlane's Ruby has the google-apis gems).
 # The submit phase fills __PACKAGE__, __EMAIL__, __WEBSITE__ from config.md.
 # (The Play app category has no API field either — it is a Play Console step.)
 require 'google/apis/androidpublisher_v3'

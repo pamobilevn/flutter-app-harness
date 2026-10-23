@@ -81,9 +81,10 @@ contact (`set_contact_details.rb`) are written / run **only when the change requ
 field** — a missing file is NOT a reason to write it: `deliver`/`supply` leave a field alone when its
 file is absent, so writing one replaces the live value with the `developer` block. Before editing ANY
 listing file in update mode, pull the live listing first so edits start from what ships:
-`cd ios && fastlane deliver download_metadata --force --app_identifier <bundle_id> --api_key_path <asc key json>`
+`cd ios && fastlane deliver download_metadata --force --app_identifier <bundle_id> --api_key_path "$K"`
+— `K=$(mktemp)` outside the repo holding `{"key_id":…,"issuer_id":…,"key":<.p8 contents>}`, `rm -f "$K"` right after; never write this JSON inside the app
 (iOS) and `fastlane supply init --package_name <bundle_id_android or bundle_id> --json_key <play-store-key.json>
---metadata_path <tmpdir>` (Android — copy only the files you then edit into `android/fastlane/metadata`). Reviewer `notes.txt` and release notes
+--metadata_path "$(mktemp -d)/m"` (Android — supply skips the download when the path already exists; — copy only the files you then edit into `android/fastlane/metadata`). Reviewer `notes.txt` and release notes
 are about this build and are always written.
 
 **iOS (deliver picks these up automatically):**
@@ -143,7 +144,7 @@ touched it.
          <plugin-templates>/set_contact_details.rb.template > "$tmp" \
      && [ -s "$tmp" ] && ! grep -nE '__[A-Z][A-Z_]*__' "$tmp"; then
     mv "$tmp" android/fastlane/set_contact_details.rb
-    (cd android && ruby fastlane/set_contact_details.rb)
+    (cd android && fastlane contact_details)   # fastlane's own Ruby has the google-apis gems; plain `ruby` raises LoadError
   else
     rm -f "$tmp"; echo "RENDER FAILED: set_contact_details.rb"
   fi
@@ -304,8 +305,9 @@ already hit; see `docs/app-gotchas.md` → Store rejections):
   `device_family: phone` uses `"1"`. Check:
   `grep -n TARGETED_DEVICE_FAMILY ios/Runner.xcodeproj/project.pbxproj | sort -u`
 - **Version string not already released.** A new build under an already-released version fails with
-  *"Invalid Pre-Release Train … closed for new build submissions."* Bump the name in `pubspec.yaml`
-  and leave `+N` (the Android `versionCode`) on its own increasing schedule.
+  *"Invalid Pre-Release Train … closed for new build submissions."* The uploaded build carries
+  the old name, so go back to `app-harness-build`: bump the name (and `+N`, per its version rule),
+  rebuild, and re-upload — never bump `pubspec.yaml` here alone.
 - **ATT (2.1), ads builds only (`monetization.admob_enabled: true`):** attach a **screen recording
   from a physical device** to App Review Information → Notes, showing fresh install → ATT prompt
   appears before any tracking → following flow. (The app must use the wait-for-resumed ATT pattern,
@@ -451,8 +453,8 @@ deliberate human checkpoint.
    auto-renewing base plan for `subscription`; localized name/description per locale, price; then
    **Activate** each. (Possible only now — Play needs an uploaded build with the BILLING permission.)
 5. Go to **Testing → Internal testing** and locate the internal-track release uploaded by
-   `app-harness-build` (Phase 8), or open the production draft that `fastlane release_notes`
-   created (same build, notes already filled).
+   `app-harness-build` (Phase 8) — `fastlane release_notes` already filled its notes, and promoting
+   copies them to production.
 6. Once all declarations are complete, click **"Promote release → Production"** (or edit the draft).
 7. Set the rollout percentage (100% recommended for a new app; a staged rollout for an update).
 8. Click **"Review release"** then **"Start rollout to production"**.

@@ -131,7 +131,7 @@ The pausing skill already stored the role to run next — resume never changes `
 **Procedure:**
 
 1. Read `docs/harness/pipeline-log.md` per `docs/harness-protocol.md` §6. Find the most recent
-   `error` event row to extract the error details.
+   `pause` row whose details start with `error:` (protocol §7 rule 12) to extract the error details.
 
 2. Print a clear error report:
    ```

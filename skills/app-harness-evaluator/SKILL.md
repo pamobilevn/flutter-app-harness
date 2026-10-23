@@ -53,10 +53,10 @@ Before any check, load:
    runs from `<app>`, and every relative path in this skill is relative to it.
 3. `docs/harness/contract.md` — parse `## Mandatory Hard Gates`, `## Platform-Robustness Gates`
    (which R-gates are REQUIRED vs N/A), and `## Functional Criteria`. Confirm `## Status: AGREED`
-   is present; if missing, abort with:
+   is present; if missing, pause first (protocol §7 rule 12): `status: paused`, `pause_reason: error`, `next_role: contract`, `updated_at`, plus the `pause` row — so `--resume` can continue once it is fixed, then abort with:
    `app-harness-evaluator: contract not AGREED — run app-harness-contract first`.
 4. `docs/harness/handoff/round-<N>-gen.md` (where N = `current_round`) per protocol §4.
-   If the file is missing, abort with:
+   If the file is missing, pause first (protocol §7 rule 12): `status: paused`, `pause_reason: error`, `next_role: generator`, `updated_at`, plus the `pause` row — so `--resume` can continue once it is fixed, then abort with:
    `app-harness-evaluator: handoff for round <N> not found — generator must run first`.
 5. The latest `docs/harness/plans/*-prd.md` — list its primary user flows and primary screens;
    Step 7 walks every one of them.
@@ -448,6 +448,10 @@ else
 fi
 [ "$MODE" = update ] && echo "CHECK R11: every NEW/CHANGE flow needs unit + widget coverage in the changed tests:" && echo "$CHANGED" | grep -E '^(test|integration_test)/'
 
+# Screenshot mode (generator §5a.5): the screenshot phase cannot capture without it, after the binary ships
+{ [ "$MODE" = new ] || [ "$ADMOB" = true ]; } && ! grep -rqE "fromEnvironment\(['\"]screenshots" lib/ \
+  && echo "FAIL R8: no screenshots dart-define in lib/ (AppConfig.screenshotMode, generator §5a.5)"
+
 # R12 permissions & privacy (when REQUIRED): usage strings localized per locale, privacy manifest, denial paths
 plutil -convert xml1 -o - ios/Runner/Info.plist 2>/dev/null | grep -oE 'NS[A-Za-z]+UsageDescription' | sort -u | while read -r k; do
   for l in <locales>; do grep -qs "$k" "ios/Runner/$l.lproj/InfoPlist.strings" || echo "FAIL R12: $k not localized for $l"; done
@@ -546,6 +550,9 @@ Boot an iOS simulator — `<simulator>` is the name of any available iPhone from
 open -a Simulator
 xcrun simctl boot "<simulator>" 2>/dev/null || true
 SIM=$(xcrun simctl list devices booted | grep -F "<simulator> (" | grep -oE '[0-9A-F-]{36}' | head -1)
+# Fresh boot: every Flutter app's process is `Runner`, so another app left running would write
+# into this app's device log.
+xcrun simctl shutdown "$SIM"; xcrun simctl boot "$SIM"
 cd "<app>"
 flutter build ios --simulator --debug --no-pub
 xcrun simctl install "$SIM" build/ios/iphonesimulator/Runner.app
@@ -587,7 +594,9 @@ lines; screenshots land in `docs/harness/screenshots/<prefix>-F<n>-<screen>.png`
 7. **Every new device-visible bug becomes a flow** — for each failure this round found outside the
    existing flows (while exploring, or an assertion a flow was missing), write
    `.maestro/flows/regress_r<N>_<slug>.yaml` from `${CLAUDE_PLUGIN_ROOT}/templates/maestro/flow.yaml.template`
-   that reproduces it and fails now (tag `ui` when it is visual), and cite it in the fix item. The
+   that reproduces it and fails now (tag `ui` when it is visual; name its screenshots
+   `R<N>-<slug>-<screen>` — the flat copy would overwrite the `F<n>-` shots), and cite it in the
+   fix item. The
    generator fixes the app until it passes; the flow stays in the suite for good.
 8. Study every screenshot carefully. Check for: blank/white screens, overflow stripes, overlapping
    or clipped UI, a keyboard covering the focused field, missing empty/error states, wrong language

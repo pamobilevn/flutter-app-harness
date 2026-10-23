@@ -420,6 +420,7 @@ The state machine governing `current_phase`, `next_role`, and `status` transitio
 | monetize   | complete       | build                                    |
 | build      | complete       | screenshot                               |
 | screenshot | complete       | submit                                   |
+| screenshot | `screenshots` flag/gate missing | status=paused, pause_reason=error, next_role=build (resume rebuilds once the flag is added) |
 | submit     | metadata-done  | status=paused, pause_reason=manual_action|
 | (paused)   | resume         | retro                                    |
 | retro      | complete       | status=completed                         |

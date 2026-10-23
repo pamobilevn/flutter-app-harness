@@ -8,7 +8,8 @@ key.properties
 play-store-key.json
 ios/Runner/Runner.entitlements
 ios/fastlane/certs/
+ios/build/
 .flutter-plugins*
 
 # NOTE: pubspec.lock is intentionally committed (this is an app — reproducible builds).
-# Do NOT add it here. `flutter create` already ignores build/ and .dart_tool/.
+# Do NOT add it here. `flutter create` ignores /build/ and .dart_tool/ — not ios/build/ (the IPA).

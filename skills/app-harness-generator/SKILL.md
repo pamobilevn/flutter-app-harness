@@ -100,7 +100,7 @@ When `current_round` is 1:
 3. Read the latest design doc (`docs/harness/plans/*-design.md`, same rule). You need the token
    spec, light/dark palettes, screen inventory with loading/empty/error states, and any external
    design source (Figma/Stitch).
-4. Read `docs/harness/contract.md`. If `## Status: AGREED` is missing, abort with
+4. Read `docs/harness/contract.md`. If `## Status: AGREED` is missing, pause first (protocol §7 rule 12): `status: paused`, `pause_reason: error`, `next_role: contract`, `updated_at`, plus the `pause` row — so `--resume` can continue once it is fixed, then abort with
    `app-harness-generator: contract not AGREED — run app-harness-contract first`.
 5. Read `checkpoint` from `state.md` (protocol §2). **Re-entry:** if a prior run crashed or paused
    mid-phase, skip every sub-phase `≤ checkpoint` (its HARD GATE passed and its output exists) and
@@ -415,6 +415,7 @@ class _AppState extends ConsumerState<App> {
 
   @override
   Widget build(BuildContext context) => MaterialApp.router(
+        debugShowCheckedModeBanner: false, // store screenshots + Maestro shots are debug builds
         onGenerateTitle: (context) => AppLocalizations.of(context).appTitle,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
@@ -855,7 +856,7 @@ grep -rn "withNoTextScaling\|TextScaler.noScaling\|textScaleFactor:" lib --inclu
   Then one `.maestro/flows/F<n>_<slug>.yaml` per PRD primary flow from
   `<plugin-templates>/maestro/flow.yaml.template`: fresh install, the flow exactly as a user does
   it with an assert after every action, kill + relaunch + assert, and resume in at least one flow.
-  Fill `<__BUNDLE_ID__>` and every `<...>`; selectors are regex alternations over every locale's ARB
+  Fill every `<...>` (`appId` stays `${APP_ID}` — `suite.sh` passes the platform's id); selectors are regex alternations over every locale's ARB
   string. Tag main screens `ui`. Build the debug app, install it (`docs/app-gotchas.md`), and run
   `.maestro/suite.sh <device-id> round-<N>-gen` until every flow passes, then
   `.maestro/suite.sh <device-id> round-<N>-gen-xxxl xxxl` — a 200% widget test passes layouts

@@ -33,14 +33,14 @@ platform :android do
     )
   end
 
-  desc "Set the release notes (changelog) on the production draft release"
+  desc "Set the release notes (changelog) on the internal release of this build"
   lane :release_notes do
+    # The build is only on internal; promoting it to production in the Console copies these notes.
     upload_to_play_store(
       package_name: PACKAGE,
       json_key: JSON_KEY,
-      track: "production",
+      track: "internal",
       version_code: VERSION_CODE,
-      release_status: "draft", # app is unpublished → keep the draft as draft
       skip_upload_aab: true,
       skip_upload_apk: true,
       skip_upload_metadata: true,
@@ -48,6 +48,11 @@ platform :android do
       skip_upload_screenshots: true,
       skip_upload_changelogs: false,
     )
+  end
+
+  desc "Set the Play listing contact email + website (supply has no field for them)"
+  lane :contact_details do
+    load File.expand_path("set_contact_details.rb", __dir__)
   end
 
   desc "Upload the signed AAB to the internal track + metadata"

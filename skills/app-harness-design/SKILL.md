@@ -38,7 +38,7 @@ Extract:
 | `default_language` | Write every copy sample (empty/error messages, CTA labels) in it |
 | `locales` | The bundled font (if any) must cover every locale's script |
 | `orientation`, `device_family` | `all` → layouts survive rotation; `universal` → wide-screen layout per screen |
-| `skip_monetize` | `true` → no ad slots anywhere |
+| `monetization.admob_enabled` | `false` → no ad slots anywhere (update mode: keep the existing ad slots even when `skip_monetize: true`) |
 
 If `config.md` does not exist, abort with:
 `app-harness-design: docs/harness/config.md not found — run the orchestrator to bootstrap first.`
@@ -56,8 +56,8 @@ Extract from the PRD (sections are found by their English heading term):
 - **Screens & navigation** — navigation shell, onboarding yes/no, and the route table → **one
   screen spec per route name, one-to-one**
 - **Settings & permissions** — permission rationale UI
-- **Monetization intent** — candidate placements → reserved ad slots in the screen specs (none
-  when `skip_monetize: true`)
+- **Monetization intent** — candidate placements → reserved ad slots in the screen specs (no new
+  ones when `skip_monetize: true`; update mode keeps the slots of ads that already ship)
 
 ---
 
