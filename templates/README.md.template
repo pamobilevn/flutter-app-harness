@@ -52,7 +52,7 @@ flutter run
 ```bash
 flutter analyze
 flutter test                                    # unit + widget tests
-flutter test integration_test -d <device-id>    # primary flow on a simulator/emulator
+.maestro/suite.sh <device-id> local             # every primary flow on a simulator/emulator (Maestro)
 ```
 
 ## Build (release)

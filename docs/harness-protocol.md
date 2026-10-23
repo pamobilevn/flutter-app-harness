@@ -19,6 +19,7 @@ Target: a production Flutter **mobile application**.
 | Backend | **local-first** (`backend: local`) | plan may opt into `rest` or `firebase` only when the PRD needs it |
 | Monetization | **AdMob, all formats** (banner / native / interstitial / app-open / rewarded) | the monetize phase then **asks** whether to add IAP / subscriptions |
 | Deploy | plugin's own **fastlane** templates | `templates/fastlane/*` |
+| Device tests | **Maestro** flows committed in the app (`.maestro/`) | §3 Device test suite; `integration_test` only when `maestro` is not installed |
 
 Two entry modes: **new** (`/app-harness "<idea>"` — research → … → a new app) and **update**
 (`/app-harness --audit [path]` — audit an existing Flutter project, keep its core idea, fix and extend
@@ -213,7 +214,7 @@ regardless of other passing criteria.
 | R8 | Store graphics (Play hi-res icon + feature graphic, iOS screenshots) | always |
 | R9 | Persistence & data safety (repositories, versioned schema, secrets in secure storage) | always |
 | R10 | Accessibility (text scaling, Semantics, tap targets, contrast, reduce motion) | always |
-| R11 | Test depth (unit + widget + integration) | always |
+| R11 | Test depth (unit + widget + Maestro device flows) | always |
 | R12 | Permissions & privacy (in-context requests, denied handling, localized usage strings) | app uses any runtime permission, or `monetization.admob_enabled: true` (ATT) |
 
 ### Update-mode gate overrides (`mode: update`)
@@ -227,7 +228,7 @@ Legacy code is not held to greenfield gates; changed code is. Contract and evalu
 | HG3 stub grep | files the harness created or modified |
 | HG4 / HG5 | new and changed code |
 | HG6 l10n | new strings follow the project's localization; N/A if the project has none and the change request does not add it |
-| HG7 flows | every `KEEP` flow of the baseline PRD (regression) + every `CHANGE`/`NEW` flow works end to end; data created before the update still loads after it |
+| HG7 flows | every `KEEP` flow of the baseline PRD (regression — the audit's baseline Maestro flows pass against the new build) + every `CHANGE`/`NEW` flow works end to end; data created before the update still loads after it |
 | HG8 | unchanged |
 | R1–R12 | REQUIRED for new/changed code; audit gap findings apply only when the user selected them in the change request |
 
@@ -239,6 +240,31 @@ CHANGED=$({ git diff --name-only --diff-filter=d <baseline.commit>; git ls-files
 ```
 
 Baseline screenshots are named per flow: `docs/harness/screenshots/baseline-F<n>-<screen>.png`.
+
+### Device test suite (`.maestro/`)
+
+Every on-device check a verdict rests on is a Maestro flow committed in the app repo, so each round
+re-runs the same checks and they outlive the session. Ad-hoc simulator taps are for exploring only:
+a finding that decides a verdict is written down as a flow. Templates: `templates/maestro/`;
+pitfalls: `docs/app-gotchas.md` → Device flow tests (Maestro).
+
+```
+.maestro/
+  suite.sh                         one flow at a time; screenshots + device log → docs/harness/screenshots/
+  subflows/ready.yaml              closes ATT / consent / ad / StoreKit interruptions, waits for the first screen
+  flows/F<n>_<slug>.yaml           one per PRD primary flow (F<n> = PRD flow id) — tags: flow [, ui]
+  flows/regress_r<N>_<slug>.yaml   a device-visible bug found in round N, reproduced — never weakened or deleted
+```
+
+| Who | Writes / runs |
+|---|---|
+| generator | 5c.8 writes one `F<n>` flow per primary flow; every round leaves the whole suite green |
+| evaluator | Step 7 runs the suite (`light`, then `ui` flows in `dark` and `xxxl`); writes a `regress_r<N>` flow per device-visible bug |
+| audit (update) | writes `F<n>` flows for the baseline flows and runs them (`baseline`); an existing `.maestro/` is extended, never replaced |
+
+Screenshot `takeScreenshot: F<n>-<screen>` lands as `docs/harness/screenshots/<prefix>-F<n>-<screen>.png`,
+the device log as `<prefix>-device.log`. Prefixes: `baseline` (audit),
+`round-<N>-<ios|android|ipad>[-dark|-xxxl]` (evaluator).
 
 Full requirement text for each gate lives in `skills/app-harness-contract/SKILL.md`; the patterns
 behind them live in `docs/app-gotchas.md`.
@@ -274,6 +300,10 @@ flutter analyze output (truncated to last 20 lines)
 flutter test output (truncated to last 20 lines)
 ```
 
+```
+.maestro/suite.sh summary line (flows passed / total) and any FAIL lines
+```
+
 ## Environment Detection
 
 - Flutter version: <output of `flutter --version`>
@@ -307,6 +337,9 @@ After each evaluator round, the evaluator writes `docs/harness/feedback/round-<N
 | Cold-start iOS | OK / CRASH | screenshots/round-<N>-ios-home.png |
 | Primary flow: <name> | OK / FAIL | screenshots/round-<N>-ios-<flow>.png |
 | Restart persistence | OK / FAIL | — |
+| Commit evaluated | `<git rev-parse HEAD>` | — |
+| Independent review (Step 8) | 3 findings, 2 reproduced | — |
+| `.maestro/suite.sh` light / dark / xxxl | 6/6 · 4/4 · 4/4 flows | screenshots/round-<N>-ios-F1-result.png, round-<N>-ios-device.log |
 | <app-specific check> | … | … |
 
 ## Failed Criteria
@@ -409,3 +442,36 @@ Valid `next_role` values: `audit`, `research`, `plan`, `design`, `contract`, `ge
 10. By default a PASS PAUSES for human review before deploy: the evaluator sets `status: paused`, `pause_reason: manual_action`, and the deploy `next_role` (monetize/build). The user runs and approves the built app, then `--resume` dispatches that `next_role`. If `config.md` `auto_deploy: true`, PASS instead sets `status: running` and continues straight to deploy with no pause.
 11. In update mode `research` never runs; `audit` is the entry phase and writes `docs/harness/specs/<date>-audit.md` + `docs/harness/specs/<date>-baseline-prd.md`. The generator works on a branch (`harness/<YYYYMMDD>-update`) in the existing repository and never runs `flutter create`, moves `docs/harness/`, or resets `version:`. A new `--audit` on a project whose run is `completed` archives the old `docs/harness/` to `docs/harness-archive/<YYYYMMDD>/` and bootstraps fresh.
 12. Every phase that sets `status: paused` appends a `pause` row to `pipeline-log.md`: `| <ISO-8601 UTC now> | pause | <phase> | manual_action: <what the user must do> |` (or `error: <reason>`). Resume shows the latest one.
+
+---
+
+## 8. Model Routing (tiered)
+
+Phases run in the main session (they ask the user and own `state.md`); a skill cannot change that
+session's model. Run the harness session on **Sonnet** — implementation and integration — and let
+the phases pull in cheaper or stronger models only for the bounded sub-steps below, through the
+`Agent` tool's `model` alias (`haiku` / `sonnet` / `opus`) on the built-in `Explore` /
+`general-purpose` agent types. Never pin a model id; if a `model` override is refused, run the same
+step without it rather than block the phase.
+
+| Phase | Sub-step | Agent · model | Returns |
+|---|---|---|---|
+| research | fetch one competitor's store data + mine its 1–3★ reviews (one agent per competitor, parallel) | `general-purpose` · haiku | complaint counts + short verbatim quotes |
+| audit | inventory of one area group (large codebase, parallel) | `Explore` · haiku | facts with file paths |
+| generator | root cause of a criterion that failed two rounds in a row (escalation) | `general-purpose` · opus, read-only | diagnosis, no edits |
+| evaluator | independent review of the round diff against the contract | `general-purpose` · sonnet (round 1) / haiku (round N > 1) | findings with file:line |
+| evaluator `--strict` 6.3 | device roles · gap finder · store-policy / security review | sonnet · haiku · opus | PASS/FAIL + evidence |
+
+Rules:
+
+1. **One owner.** The phase skill integrates every result and alone writes app code, `state.md`,
+   and verdicts. Delegated agents are read-only unless the table says otherwise.
+2. **No shared targets.** No two agents edit the same files, and no two agents drive the same
+   device — device work runs one agent after another on one UDID, or each on its own device.
+3. **Verify before it counts.** A claimed command result, finding, or root cause is re-checked by
+   the owner (re-run the command, open the file:line, reproduce on the device) before it enters a
+   spec, a verdict, or a fix.
+4. **No agent for trivial work** — greps, single commands, and anything the owner already has in
+   context stay in the session. A delegated step never needs user input.
+5. **Escalate on evidence, not by default:** the same criterion ID failing in two consecutive
+   rounds, a root cause still unclear, or a security / payments / data-integrity decision.

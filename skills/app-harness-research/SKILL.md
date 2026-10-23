@@ -111,6 +111,11 @@ frequency, pick **3-5 representative competitors**:
 
 Record per competitor: title, rating + ratings count, primary flows, strength, top complaints.
 
+Delegate steps 1–2 (protocol §8): one `general-purpose` agent with `model: haiku` per competitor,
+all in parallel, each returning the store data above plus its low-star complaints as counts with
+short verbatim quotes (≤ 15 words). Do step 3 yourself across all of them, and re-fetch one URL per
+agent to check its numbers before they enter the spec.
+
 ### 3. Trend signals
 
 WebSearch `<category> app trends 2026`, `mobile app category growth 2026`, and

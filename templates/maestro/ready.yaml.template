@@ -1,0 +1,31 @@
+# Copy to .maestro/subflows/ready.yaml. Run right after every launchApp: closes whatever can
+# cover the app (ATT prompt, UMP consent, app-open ad, StoreKit sign-in), then waits for the
+# first screen. Every dismissal is conditional, so it is safe anywhere and repeatedly. It never
+# taps an ad creative — only the close / "Continue to app" controls.
+appId: <__BUNDLE_ID__>
+---
+- runFlow:
+    when:
+      visible: "Ask App Not to Track"
+    commands:
+      - tapOn: "Ask App Not to Track"
+- runFlow:
+    when:
+      visible: "Do not consent"
+    commands:
+      - tapOn: "Do not consent"
+- runFlow:
+    when:
+      visible: "Continue to app.*"
+    commands:
+      - tapOn: "Continue to app.*"
+- runFlow:
+    when:
+      visible: "Sign in to Apple.Account"
+    commands:
+      - tapOn: "Cancel"
+# TODO(generator): one regex alternation over the first-screen text — onboarding (fresh install)
+# and home (relaunch), in every configured locale, e.g. "Welcome|Chào mừng|My habits|Thói quen".
+- extendedWaitUntil:
+    visible: "<__FIRST_SCREEN_TEXT__>"
+    timeout: 60000

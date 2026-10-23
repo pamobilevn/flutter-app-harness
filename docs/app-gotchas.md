@@ -235,6 +235,53 @@ blank.
 - **Test with sandbox / license testers**; product IDs exist in both consoles before review, and
   App Review needs the IAP products submitted together with the binary.
 
+## Device flow tests (Maestro)
+
+Suite layout and who writes what: `docs/harness-protocol.md` §3 Device test suite.
+
+- **One flow at a time** — always `.maestro/suite.sh`. `maestro test <dir>` started several flows
+  concurrently on one device (2.11.0); they fought over the app and failed at random.
+- **Screenshots are not in the cwd** — `takeScreenshot` writes
+  `<--test-output-dir>/<timestamp>/<flow>/takeScreenshot/<name>.png` (`~/.maestro/tests/…` without
+  the flag). `suite.sh` copies them flat, so names must be unique across the suite: prefix `F<n>-`.
+- **iOS build under test** — `flutter build ios --simulator --debug` + `xcrun simctl install <udid>
+  build/ios/iphonesimulator/Runner.app`; that build cold-starts from `launchApp` with no debugger.
+  If an app exits right after `launchApp` (a debug build that needs the Flutter tool attached),
+  run it under `flutter run` and start the flows on its current screen without `launchApp`; every
+  relaunch step then needs a new `flutter run`. Android: `flutter build apk --debug` +
+  `adb install -r`. Every flow failing at install or `launchApp` is usually the build, not Maestro:
+  a simulator build left x86_64-only (a pod excluding arm64) will not install on Apple Silicon
+  simulators — override the archs in the Podfile `post_install`; an app without
+  `UIApplicationSceneManifest` traps at launch on iOS 27 — adopt the UIScene lifecycle.
+- **`--dart-define=screenshots=true` hides prompts** — besides ads it suppresses the permission and
+  rating prompts, so R12 permission flows always run on a normal build.
+- **`launchApp` defaults** — stops the running app first (`stopApp: true`) and grants every runtime
+  permission unless `permissions:` is set. Permission flows (R12): `permissions: { all: unset }`
+  → the system prompt appears (assert the in-app rationale came first); `{ all: deny }` → the
+  denied path. Resume (R3): `pressKey: home`, then `launchApp: { stopApp: false }`.
+- **Selectors** — Flutter exposes visible text, `tooltip` and `Semantics(label:)`. Match a regex
+  alternation over every configured locale (`"Save|Lưu"`; escape `( ) . + ? *`), so the suite
+  passes whatever the device language. A custom-painted canvas (`CustomPaint`) has no semantics →
+  `point: "x%,y%"`; on a normal widget a needed `point:` tap is an R10 bug (missing label) — fix
+  the label instead.
+- **Merged semantics** — Flutter merges a card's or list tile's texts into one node
+  (`"Title\n12 items"`), so match `"(?s)Title.*"` instead of the bare title. Content drawn in a
+  system overlay window is not in Maestro's view tree at all.
+- **Ads steal taps** (`admob_enabled: true`): `ready.yaml` closes the full-screen ones, but a banner
+  (collapsible ones especially) covers bottom controls. Run every non-permission flow on a build
+  with the project's ad-off flag (`screenshots`); if that flag also seeds demo data, the flows'
+  fresh-install asserts expect the seed.
+- **Address devices by UDID / serial** (`--device`, `xcrun simctl … "$SIM"`, `adb -s`), never
+  `booted`: with two simulators booted, `booted` picks the wrong one.
+- **Text input** — `tapOn` the field before `inputText`; `hideKeyboard` before tapping a button
+  the keyboard may cover.
+- **Slow on iOS** — each command takes seconds; one flow ≈ 1–3 min. Keep a flow to one PRD flow,
+  `waitForAnimationToEnd` before `takeScreenshot`, `extendedWaitUntil` (≥ 30 s) for cold start, and
+  run the suite in the background (Bash `run_in_background: true`).
+- **Console log** — `suite.sh` streams the device log (`simctl spawn … log stream`, `adb logcat`).
+  An empty log means capture broke, never a clean run.
+- `MAESTRO_CLI_NO_ANALYTICS=1` (set by `suite.sh`) silences the analytics prompt.
+
 ## Store screenshots
 
 - **Screenshot mode flag** (`--dart-define=screenshots=true`): disables ads, the ATT/UMP prompts,

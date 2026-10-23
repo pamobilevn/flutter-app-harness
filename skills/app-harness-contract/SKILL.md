@@ -180,9 +180,15 @@ which forms exist, which permissions are used).
 - ≥ 3 unit tests on notifiers/repositories with real logic, run through `ProviderContainer` with
   overrides.
 - ≥ 1 widget test per primary screen (minimum 2).
-- ≥ 1 integration test (`integration_test/`) driving the main PRD flow end to end, including
-  persistence (data still present after the app is re-pumped from storage).
-- Scope note: name the primary screens and the main flow the integration test drives.
+- One Maestro flow per PRD primary flow — `.maestro/flows/F<n>_<slug>.yaml` (protocol §3 Device
+  test suite) — driving it on a device from a fresh install (`clearState: true`), with an assert
+  after every action and a kill + relaunch + assert for the data it created; at least one flow
+  proves resume (`pressKey: home` → `launchApp: { stopApp: false }`). Main screens are tagged `ui`
+  and replayed in dark mode and the largest text size. The suite passes via `.maestro/suite.sh`.
+- Only when `maestro` is not installed: ≥ 1 integration test (`integration_test/`) driving the
+  main PRD flow end to end, including persistence (data still present after the app is re-pumped
+  from storage).
+- Scope note: name the primary screens and the `F<n>` flows.
 
 ### R12 Permissions & privacy — REQUIRED when any runtime permission is used OR `monetization.admob_enabled: true`
 
@@ -217,7 +223,7 @@ When the run fixes/extends an existing app (`/app-harness --audit`):
 - **Functional Criteria** have three groups:
   1. `### New & changed` — one criterion per step of each NEW/CHANGE flow (same verifiability rules).
   2. `### Regression` — one criterion per KEEP flow: "F<n> <name> completes exactly as in the baseline
-     (screenshots `baseline-F<n>-*.png`)", plus "data created by the baseline version loads after the
+     (the audit's `.maestro/flows/F<n>_*.yaml` passes; screenshots `baseline-F<n>-*.png`)", plus "data created by the baseline version loads after the
      update (upgrade install or migration test)".
   3. `### Fixes` — one criterion per selected audit gap ID, verifiable the same way the audit found it.
 - **Anti-stub rule** applies to files the harness creates or modifies (`git diff --name-only
@@ -354,7 +360,7 @@ Requirement text: `skills/app-harness-contract/SKILL.md`; patterns: `docs/app-go
 - **R8 Store graphics** — REQUIRED
 - **R9 Persistence & data safety** — REQUIRED — storage: <shared_preferences>; durable restore: N/A — PRD does not require reinstall restore
 - **R10 Accessibility** — REQUIRED
-- **R11 Test depth** — REQUIRED — primary screens: <Home, Edit>; integration flow: <create → complete → restart>
+- **R11 Test depth** — REQUIRED — primary screens: <Home, Edit>; device flows: <F1 create → complete → restart, F2 …>
 - **R12 Permissions & privacy** — REQUIRED — <notifications for reminders>; ATT via monetize
 
 ## Functional Criteria (per app)

@@ -24,7 +24,8 @@ the phase transition table are defined in `docs/harness-protocol.md` — the sin
 `docs/app-gotchas.md`. Cite them; do not redefine them here.
 
 **Rule: audit is read-only on application code.** It runs `flutter pub get`, `flutter analyze`,
-`flutter test`, and the app on a simulator, but changes no file outside `docs/harness/`.
+`flutter test`, and the app on a simulator, but changes no file outside `docs/harness/` and
+`.maestro/` (the baseline device flows — test files, not app code).
 
 ---
 
@@ -91,8 +92,9 @@ Collect facts, citing file paths. Prefer reading over guessing; mark anything in
 | Store listing | `ios/fastlane/metadata/**`, `android/fastlane/metadata/android/**` (descriptions, categories, locales), existing `Fastfile`s |
 | Docs | `README.md`, any PRD/spec in the repo |
 
-For a large codebase, delegate the inventory to parallel read-only sub-agents (one per area group)
-and merge their findings — keep the main context for judgment.
+For a large codebase, delegate the inventory to parallel read-only sub-agents — one `Explore` agent
+with `model: haiku` per area group (protocol §8) — and merge their findings, opening each cited
+file path before it enters the audit spec. Keep the main context for judgment.
 
 ---
 
@@ -104,10 +106,20 @@ flutter analyze 2>&1 | tail -n 40      # record the issue count
 flutter test 2>&1 | tail -n 40         # record passed / failed counts (and failing test names)
 ```
 
-Then **see the app**: boot a simulator, `flutter run`, and walk each primary flow you draft in step 4
-(F1, F2, … — do the walk once those flows are drafted), capturing every screen of flow F<n> to
-`docs/harness/screenshots/baseline-F<n>-<screen>.png` (same commands as the evaluator's simulator
-step). These are the regression references the contract and evaluator compare against. Note crashes, console errors, blank screens, broken flows. If the app
+Then **see the app** — and write down what you see as Maestro flows, so the regression check is
+re-runnable instead of a one-off walk (protocol §3 Device test suite; pitfalls:
+`docs/app-gotchas.md` → Device flow tests (Maestro)). Once the primary flows are drafted in step 4
+(F1, F2, …): boot a simulator, build and install the app (same commands as the evaluator's Step 7),
+copy `${CLAUDE_PLUGIN_ROOT}/templates/maestro/` (`suite.sh.template` → `.maestro/suite.sh`, then
+`chmod +x .maestro/suite.sh`; `ready.yaml.template` → `.maestro/subflows/ready.yaml`), and write one
+`.maestro/flows/F<n>_<slug>.yaml` per flow from `flow.yaml.template`, asserting what the app does
+today. An existing `.maestro/` is extended, never replaced — keep its flows and its own scripts.
+The flows stay untracked here (audit commits nothing); the generator's first commit takes them.
+Run `.maestro/suite.sh <udid> baseline` → `docs/harness/screenshots/baseline-F<n>-<screen>.png`.
+These flows and screenshots are the regression references: the evaluator replays the same flows
+against the new build. A flow that fails on the baseline build documents a bug — record it as a gap,
+do not bend the flow to pass. If `maestro` is not installed, walk the flows by hand with
+`flutter run` and capture the same file names. Note crashes, console errors, blank screens, broken flows. If the app
 cannot launch, that is the first mandatory fix item.
 
 Record the numbers into `config.md` → `baseline:` (`analyze_issues`, `tests_passed`, `tests_failed`,
@@ -284,7 +296,8 @@ Leave all other keys unchanged.
 
 - WebSearch/WebFetch failures in step 6 → log a warning, propose extensions from code-level
   opportunities only.
-- Simulator unavailable → record "launch not verified" in the baseline and add it as a critical
-  finding to verify in the evaluator; continue.
+- Simulator unavailable → record "launch not verified" in the baseline, still write the
+  `.maestro/` flows from the code (unrun), and add both as critical findings to verify in the
+  evaluator; continue.
 - Never modify application code, `pubspec.yaml`, or platform files during audit.
 - If `docs/harness/specs/` is missing, create it before writing.

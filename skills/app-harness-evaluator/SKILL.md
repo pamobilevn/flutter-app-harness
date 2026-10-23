@@ -31,6 +31,11 @@ schemas here. Robustness patterns are in `docs/app-gotchas.md` — judge against
 launch the app on a simulator, walk every primary user flow, kill and relaunch it, capture and
 study screenshots. Stub detected = automatic FAIL, no exceptions.**
 
+**The evaluator reports, it never fixes.** It does not edit app code, tests, or platform files and
+commits nothing to the app; the generator fixes in the next round. In the app it writes only
+`docs/harness/` and `.maestro/flows/regress_r<N>_*.yaml` (Step 7 item 7). A PASS "after in-loop
+fixes" is not a PASS.
+
 ---
 
 ## Setup — Read Inputs
@@ -102,16 +107,20 @@ git worktree remove --force "$BT" 2>/dev/null; git worktree add --detach "$BT" "
   change request (that gap must now be clean); judge CHECK lines on NEW/CHANGE screens and services
   only. Identity checks (bundle ids, display name, icon, orientation, device family) compare against
   the values audit recorded — they must be **unchanged** unless the change request changed them.
-- **Step 7 — regression walk (required):** walk every `KEEP` flow of the delta PRD exactly as the
-  baseline did and compare against `docs/harness/screenshots/baseline-F<n>-<screen>.png` (F<n> = the
-  PRD flow id); then every `CHANGE`/`NEW` flow. A KEEP flow that broke or visibly changed without a
-  change-request reason is a FAIL.
+- **Step 7 — regression walk (required):** the audit's baseline flows are the regression proof —
+  Step 7's suite run replays every `KEEP` flow's `.maestro/flows/F<n>_*.yaml` against the new build;
+  compare `round-<N>-ios-F<n>-<screen>.png` with `baseline-F<n>-<screen>.png` (F<n> = the PRD flow
+  id). Every `CHANGE`/`NEW` flow needs its own `F<n>` flow (a CHANGE flow updates the baseline
+  flow's assertions only where the change request says the behavior changes). A KEEP flow that
+  fails or visibly changed without a change-request reason is a FAIL.
 - **Upgrade data check (required):** data created before the update must still load. If an emulator
-  allows it: install the baseline build from the worktree
-  (`cd "${TMPDIR:-/tmp}/harness-baseline-<app_slug>" && flutter run -d "<simulator>"`;
+  allows it: build the baseline app in the worktree
+  (`cd "${TMPDIR:-/tmp}/harness-baseline-<app_slug>" && flutter build ios --simulator --debug`;
   copy any gitignored build config it needs — `google-services.json`, `GoogleService-Info.plist`,
-  `.env` — from `<app>`), create data in each KEEP flow, then install the new build from `<app>` over
-  it (no uninstall) and confirm the data is intact. If that is impractical, require a migration unit
+  `.env` — from `<app>`), install it, run the KEEP `F<n>` flows from `<app>` (each leaves its data
+  behind), then install the new build from `<app>` over it (no uninstall) and confirm the data with
+  `.maestro/flows/regress_r<N>_upgrade.yaml`: `launchApp` without `clearState`, then an
+  `assertVisible` per KEEP flow's record. If that is impractical, require a migration unit
   test that feeds a baseline-schema payload through the new repository and asserts nothing is lost —
   no test, no PASS.
 - **Feedback** adds a `Baseline comparison` row: analyze <baseline> → <now>, tests
@@ -414,10 +423,24 @@ grep -rnHiE "flash|strobe|blink" $SCOPE --include='*.dart' | grep -iE "Timer|Dur
 UNIT=$(grep -rhE '^[[:space:]]*test\(' test/ --include='*_test.dart' 2>/dev/null | wc -l | tr -d ' ')
 WIDGET=$(grep -rh 'testWidgets(' test/ --include='*_test.dart' 2>/dev/null | wc -l | tr -d ' ')
 INTEG=$(grep -rh 'testWidgets(' integration_test/ --include='*.dart' 2>/dev/null | wc -l | tr -d ' ')
-echo "unit=$UNIT widget=$WIDGET integration_test=$INTEG"
+FLOWS=$(ls .maestro/flows/F*.yaml 2>/dev/null | wc -l | tr -d ' ')
+echo "unit=$UNIT widget=$WIDGET maestro_flows=$FLOWS integration_test=$INTEG"
 [ "${UNIT:-0}" -ge 3 ] || echo "FAIL R11: fewer than 3 unit tests"
 [ "${WIDGET:-0}" -ge 2 ] || echo "FAIL R11: fewer than 2 widget tests (need >=1 per primary screen)"
-[ "${INTEG:-0}" -ge 1 ] || echo "FAIL R11: no integration_test driving the main PRD flow"
+if command -v maestro >/dev/null; then
+  [ "${FLOWS:-0}" -ge 1 ] || echo "FAIL R11: no Maestro flows in .maestro/flows/ (one per PRD primary flow)"
+  [ -x .maestro/suite.sh ] && [ -f .maestro/subflows/ready.yaml ] || echo "FAIL R11: .maestro/suite.sh or subflows/ready.yaml missing"
+  for f in .maestro/flows/*.yaml .maestro/subflows/*.yaml; do
+    [ -e "$f" ] || continue
+    grep -vE '^[[:space:]]*#' "$f" | grep -qE '<__|<[a-z][^>]*>' && echo "FAIL R11: template placeholder left in $f"
+    case "$f" in */subflows/*) continue;; esac
+    grep -qE 'assertVisible|assertNotVisible|assertTrue' "$f" || echo "FAIL R11: $f asserts nothing"
+    case "$(basename "$f")" in F*) grep -q 'clearState: true' "$f" || echo "FAIL R11: $f does not start from a fresh install";; esac
+  done
+  grep -lq 'stopApp: false' .maestro/flows/*.yaml 2>/dev/null || echo "FAIL R3: no flow proves resume (pressKey: home -> launchApp stopApp: false)"
+else
+  [ "${INTEG:-0}" -ge 1 ] || echo "FAIL R11: maestro not installed and no integration_test driving the main PRD flow"
+fi
 if $RIVERPOD; then
   grep -rq "ProviderContainer" test/ 2>/dev/null || echo "FAIL R11: unit tests do not drive notifiers via ProviderContainer"
 else
@@ -501,94 +524,97 @@ For each criterion in `contract.md` §§ "Mandatory Hard Gates", "Platform-Robus
 result, and any screenshot or log path (Step 7 rows are added as Step 7 runs). Do not mark a
 criterion DONE without running a command or capturing a screenshot that directly verifies it.
 
-### Step 7 — Launch on simulator and walk every primary flow
+### Step 7 — Run the device suite and walk every primary flow
 
 **This step is mandatory. A PASS verdict is not valid without completing it.**
 
+The device verdict rests on `.maestro/` (protocol §3 Device test suite; pitfalls:
+`docs/app-gotchas.md` → Device flow tests (Maestro)) — files every round re-runs, so the evidence is
+reproducible and a fixed bug stays fixed. Tap around with the iOS Simulator control tool to explore,
+but a finding that decides the verdict is written down as a flow (item 7). Run the whole suite
+**every round**: evidence from an earlier round never counts, not even for "unchanged" code, and
+widget tests never stand in for a device run. Every Step 7 Evidence row cites this round's
+`round-<N>-*` files and the `flows: <passed>/<total>` line of each run. Address devices by UDID /
+serial, never `booted` (two booted simulators → the wrong one).
+
 Boot an iOS simulator — `<simulator>` is the name of any available iPhone from
-`xcrun simctl list devices available` (use an Android emulator only if iOS is unavailable):
+`xcrun simctl list devices available` (no iOS on this machine, or an Android-only app → do items
+2–4 on the Android emulator, item 6) — then build and install the app; the flows launch it (no
+`flutter run`):
 
 ```bash
 open -a Simulator
 xcrun simctl boot "<simulator>" 2>/dev/null || true
-mkdir -p "<app>/docs/harness/screenshots"
-```
-
-Install and launch the app, keeping its console log (run it in the background — Bash
-`run_in_background: true`):
-
-```bash
+SIM=$(xcrun simctl list devices booted | grep -F "<simulator> (" | grep -oE '[0-9A-F-]{36}' | head -1)
 cd "<app>"
-flutter run -d "<simulator>" --no-pub > docs/harness/screenshots/round-<N>-run.log 2>&1
+flutter build ios --simulator --debug --no-pub
+xcrun simctl install "$SIM" build/ios/iphonesimulator/Runner.app
 ```
 
-Drive the UI with the iOS Simulator control tool (tap / swipe / text) when available; otherwise run
-`flutter test integration_test/ -d "<simulator>"` to drive the main flow and screenshot each state.
-Screenshots are captured with:
+Each `.maestro/suite.sh` call below runs for minutes — Bash `run_in_background: true`. It prints
+`flows: <passed>/<total>`, a `FAIL <flow>` line per failed flow, and `FAIL console` / `FAIL log`
+lines; screenshots land in `docs/harness/screenshots/<prefix>-F<n>-<screen>.png`.
 
-```bash
-xcrun simctl io booted screenshot \
-  "<app>/docs/harness/screenshots/round-<N>-ios-<label>.png"
-```
-
-1. **Cold start** — the first screen renders (onboarding or home). Capture `round-<N>-ios-home.png`.
-2. **Every primary flow** — for each primary user flow in the PRD, perform it end to end exactly as
-   a user would (create, edit, complete, delete, change a setting…) and capture at least one
-   screenshot per flow at its result state: `round-<N>-ios-<flow>.png`. Also capture the empty state
-   (fresh install, before any data) and, where the PRD defines one, an error state.
-3. **Background / resume** — send the app to the background, wait ~3 s, bring it back
-   (`simctl launch` on a running app foregrounds the same process and prints its pid):
-   ```bash
-   xcrun simctl launch booted <bundle_id>             # app already in front: prints its running pid
-   xcrun simctl launch booted com.apple.Preferences   # app goes to background; wait ~3 s
-   xcrun simctl launch booted <bundle_id>             # must print the SAME pid
-   ```
-   The same pid means a real resume; the app must show the same screen with its state intact and
-   refreshed time-sensitive data (R3). A different pid means it was cold-started — redo the
-   round-trip with the simulator control tool's HOME button and app icon before judging. Capture
-   `round-<N>-ios-resume.png`.
-4. **Console check** — before killing the app, read the run log:
-   ```bash
-   grep -nE "EXCEPTION CAUGHT|Unhandled Exception|overflowed by|setState\(\) called after dispose|Error:" \
-     docs/harness/screenshots/round-<N>-run.log
-   ```
-   Any hit is a Hard Gate 8 failure (an overflow is also an R10 failure).
-5. **Kill + relaunch (persistence)** — with user data created in step 2, wait ≥ 2 s after the last
-   edit, then:
-   ```bash
-   xcrun simctl terminate booted <bundle_id>
-   xcrun simctl launch booted <bundle_id>
-   ```
-   Every item and setting created in step 2 must still be there. Capture
-   `round-<N>-ios-restart.png`. Lost data is a Hard Gate 7 failure.
-6. **Dark mode** — record the current value (`xcrun simctl ui booted appearance`), then:
-   ```bash
-   xcrun simctl ui booted appearance dark
-   ```
-   Capture each main screen: `round-<N>-ios-dark-<screen>.png`. Check contrast and that nothing
-   stays hard-coded white/black.
-7. **Largest text size** — record the current value (`xcrun simctl ui booted content_size`), then:
-   ```bash
-   xcrun simctl ui booted content_size accessibility-extra-extra-extra-large
-   xcrun simctl terminate booted <bundle_id>; xcrun simctl launch booted <bundle_id>
-   ```
-   Capture each main screen: `round-<N>-ios-xxxl-<screen>.png`. Any overflow stripe, clipped or
-   truncated essential text, or an unreachable button is an R10 FAIL (an app-wide
-   `TextScaler.clamp(maxScaleFactor: 2.0)` is allowed — judge at the clamped size).
-8. **Restore the simulator** — put back the recorded values (defaults shown):
-   ```bash
-   xcrun simctl ui booted appearance light
-   xcrun simctl ui booted content_size large
-   ```
-9. **iPad (only when `device_family: universal`)** — repeat steps 1–2 for the home screen and one
-   primary flow on an iPad simulator (`round-<N>-ipad-<label>.png`); the layout must use the width
-   (max content width / master-detail), not stretched phone UI.
-10. Study every screenshot carefully. Check for: blank/white screens, overflow stripes, overlapping
-    or clipped UI, a keyboard covering the focused field, missing empty/error states, wrong language
-    (must match `default_language` on a device in that locale), and design-token inconsistencies.
+1. **Suite audit** — the R11 block (Step 5) passed, and every PRD primary flow has its `F<n>` flow
+   that really does the flow: fresh install, an assert after every action, kill + relaunch + assert
+   on the data it created. A flow that taps through without asserting the outcome is an R11 FAIL —
+   do not let it count as evidence.
+2. **Suite, light** — `.maestro/suite.sh "$SIM" round-<N>-ios`. Every flow must pass: a failing
+   `F<n>` flow is a Hard Gate 7 FAIL (cold start, empty state, the flow end to end, and data
+   surviving the relaunch are all asserted inside it); a failing `regress_r*` flow means an
+   earlier fix regressed. Lost data after relaunch is a Hard Gate 7 failure.
+3. **Console check** — read `docs/harness/screenshots/round-<N>-ios-device.log`. A `FAIL console`
+   line (exception, overflow, `setState() called after dispose`) is a Hard Gate 8 failure (an
+   overflow is also R10). `FAIL log` (empty log) means capture broke, not a clean run: capture again
+   with `xcrun simctl spawn "$SIM" log stream --level debug --predicate 'process == "Runner"'` while
+   re-running one flow; still empty → HG8 is not verified → FAIL.
+4. **Dark mode + largest text (UI/UX)** — `.maestro/suite.sh "$SIM" round-<N>-ios-dark dark`, then
+   `.maestro/suite.sh "$SIM" round-<N>-ios-xxxl xxxl` (replays the `ui` flows; the script sets the
+   simulator setting and restores it on exit). Dark: check contrast and that nothing stays
+   hard-coded white/black. XXXL: any overflow stripe, clipped or truncated essential text, or an
+   unreachable button is an R10 FAIL (an app-wide `TextScaler.clamp(maxScaleFactor: 2.0)` is
+   allowed — judge at the clamped size).
+5. **iPad (only when `device_family: universal`)** — install on an iPad simulator and run
+   `.maestro/suite.sh "$IPAD" round-<N>-ipad`; the layout must use the width (max content width /
+   master-detail), not stretched phone UI.
+6. **Android — every platform the app ships on runs the suite** (bugs seen only on Android
+   surfaced after submission when QA ran iOS alone). Use an emulator no other session is driving
+   (`EMU` = its serial from `adb devices`); `adb -s "$EMU" shell df -h /data` must show ≥ 1 GB
+   free. Then
+   `flutter build apk --debug && adb -s "$EMU" install -r build/app/outputs/flutter-apk/app-debug.apk`,
+   `.maestro/suite.sh "$EMU" round-<N>-android` and
+   `.maestro/suite.sh "$EMU" round-<N>-android-xxxl xxxl`. The same rules as items 2–4 apply.
+7. **Every new device-visible bug becomes a flow** — for each failure this round found outside the
+   existing flows (while exploring, or an assertion a flow was missing), write
+   `.maestro/flows/regress_r<N>_<slug>.yaml` from `${CLAUDE_PLUGIN_ROOT}/templates/maestro/flow.yaml.template`
+   that reproduces it and fails now (tag `ui` when it is visual), and cite it in the fix item. The
+   generator fixes the app until it passes; the flow stays in the suite for good.
+8. Study every screenshot carefully. Check for: blank/white screens, overflow stripes, overlapping
+   or clipped UI, a keyboard covering the focused field, missing empty/error states, wrong language
+   (must match `default_language` on a device in that locale), design-token inconsistencies, and
+   UX problems — unclear primary action, dead ends with no way back, touch targets that look too
+   small, missing feedback after an action.
 
 Any crash, blank screen, lost data after relaunch, or console error is a Hard Gate failure
 (protocol §3 Hard Gates 7–8).
+
+### Step 8 — Independent review (fresh context)
+
+The evaluator shares the generator's session and leans toward its reading of the code — in a real
+run, a PASS was reversed only by an outside review. Spawn one read-only `general-purpose` agent
+(protocol §8): `model: sonnet` in round 1, `model: haiku` in round N > 1. Give it
+`docs/harness/contract.md`, the PRD's primary flows, and this round's diff — never your draft
+verdict or Steps 1–7 results:
+
+- round 1, `mode: new` — all of `lib/` and `.maestro/`;
+- `mode: update` — `git diff <baseline.commit>..HEAD`;
+- round N > 1 — `git diff <Commit evaluated in round N-1>..HEAD`.
+
+Ask it for: stubs or fake data, a primary flow or REQUIRED R-gate the code does not really
+implement, persistence that only lives in memory, errors swallowed silently, and Maestro flows that
+pass without asserting the outcome. A finding counts only after you reproduce it (open the
+file:line, re-run the command or flow); then it is a fix item like any other. List the rest under
+Evidence as "not reproduced". Record `git rev-parse HEAD` as the Evidence row `Commit evaluated`.
 
 ---
 
@@ -623,16 +649,20 @@ total is below threshold, the verdict is FAIL regardless of 6.1 results, and eac
 
 Run this section only when `strict_mode: true` in `config.md` or `--strict` is passed.
 
-Spawn six specialist agents in parallel via the `Agent` tool. All six must report PASS for the
-overall verdict to be PASS. A single FAIL from any agent is a FAIL verdict.
+Spawn six specialist agents via the `Agent` tool (protocol §8). The four device roles run **one
+after another** on the same UDID (`model: sonnet`) — two agents on one simulator fight over it;
+test-gaps (`model: haiku`) and adversarial-reviewer (`model: opus`) only read, so they run in
+parallel with them. No agent edits the app. All six must report PASS for the overall verdict to be
+PASS; a single FAIL from any agent is a FAIL verdict. Every device behavior that fails becomes a
+`regress_r<N>_*` flow (Step 7 item 7), written by the evaluator once all verdicts are in.
 
 | Agent role | Brief |
 |---|---|
 | **ux-states** | Exercise empty (fresh install, everything deleted), error (storage/network failure forced via a provider override), offline (network apps), very long text (200-character names, the longest translation), and RTL-safe layout (`EdgeInsetsDirectional`/`AlignmentDirectional`, no hard-coded left/right; a widget test under `Directionality(textDirection: TextDirection.rtl)`). |
 | **data-integrity** | Persistence across kill + relaunch; migration from the previous schema version (write old-format data, launch, verify); rapid edits (20 adds/toggles in quick succession — no lost or duplicated rows); deletion (delete one, delete all, undo if offered, then relaunch). |
 | **lifecycle/crash** | Background mid-flow and resume; rotation only if `config.orientation: all`; an interrupted form (background with a half-filled form → input kept or discard confirmed); permission denial and permanent denial for every permission used. Confirm no crash and no lost state. |
-| **performance** | Run `flutter run --profile`, check frame rendering in DevTools; scroll a list seeded with ≥ 500 items and flag sustained frames over 16 ms; flag excessive rebuilds (whole-screen rebuilds on a single field change); flag cold start over 2 s on the simulator. |
-| **test-generator** | Identify the three highest-risk untested paths and write unit/widget tests for them; confirm they pass. |
+| **performance** | Profile mode does not run on simulators/emulators: with a physical device connected, `flutter run --profile -d <device>`, check frame rendering in DevTools, scroll a list seeded with ≥ 500 items and flag sustained frames over 16 ms, flag cold start over 2 s. With none, review the code only — `ListView.builder` for unbounded lists, narrow `select` watches, no work in `build()`, no whole-screen rebuild on a single field change — and report "frame timing not measured". |
+| **test-gaps** | Identify the three highest-risk untested paths and specify the test each needs (unit, widget, or a Maestro flow) as fix items for the generator; write nothing in the app. |
 | **adversarial-reviewer** | Adversarially review the code for secrets in the binary or repo, insecure storage (tokens/PII in `shared_preferences` or logs), and store-policy risks: 4.2 Minimum Functionality, 4.3 Spam, 5.1.1 data collection / permission strings, 3.1.1 digital goods outside IAP. |
 
 Each agent must return a structured PASS/FAIL verdict with evidence. Collect all six verdicts
@@ -773,8 +803,14 @@ append a `pause` event row so `app-harness-resume` can show the user what they a
   verdict — the generator has not run yet.
 - If the simulator cannot be booted (hardware CI), document the failure, skip Step 7, and set
   the verdict to FAIL with fix: "boot a simulator and complete Step 7."
+- If `maestro` is not installed (`command -v maestro` prints nothing), say so in the feedback, run
+  `flutter test integration_test/ -d "<simulator>"`, and walk the flows with the iOS Simulator
+  control tool (`flutter run`, `xcrun simctl io "$SIM" screenshot`,
+  `xcrun simctl ui "$SIM" appearance|content_size`, restored afterwards); add the Evidence row
+  `Maestro | not installed — brew install maestro | —`.
 - If a simulator setting was changed (appearance, content size) and the run aborts, restore it
-  before exiting.
+  before exiting (`suite.sh` restores on its own exit; a killed run may not —
+  `xcrun simctl ui "$SIM" appearance light; xcrun simctl ui "$SIM" content_size large`).
 - Update mode: always remove the baseline worktree before exiting
   (`git worktree remove --force "${TMPDIR:-/tmp}/harness-baseline-<app_slug>"`).
 - If any agent in 6.3 returns an error (not FAIL, but a tool error), retry once, then count it

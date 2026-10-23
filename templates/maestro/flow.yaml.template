@@ -1,0 +1,42 @@
+# Copy to .maestro/flows/F<n>_<slug>.yaml — one per PRD primary flow (F<n> = the PRD flow id).
+# Fresh install → do the flow as a user would → assert after every action → kill + relaunch →
+# the data is still there. Replace every <...>; nothing in angle brackets may remain.
+#
+# Selectors: Maestro sees visible text, tooltips and Semantics labels. Match each one as a regex
+# alternation over every configured locale (copy the strings from lib/l10n/app_<locale>.arb;
+# escape ( ) . + ? *), e.g. "Add habit|Thêm thói quen", so the suite runs in any device language.
+# `point:` taps only on a custom-painted canvas — on a normal widget, needing one is an R10 finding
+# (missing label), not a workaround.
+appId: <__BUNDLE_ID__>
+name: "F<n> <flow name>"
+tags:
+  - flow
+  - ui    # keep when the flow shows a main screen: suite.sh replays `ui` flows in dark + xxxl
+---
+- launchApp:
+    clearState: true    # fresh install: the flow starts from the empty state
+- runFlow: ../subflows/ready.yaml
+- takeScreenshot: F<n>-empty
+
+- tapOn: "<primary action, every locale>"
+- assertVisible: "<what the action opens>"
+- tapOn: "<field label or hint>"
+- inputText: "<realistic value>"
+- hideKeyboard
+- tapOn: "<save / confirm>"
+- assertVisible: "<realistic value>"
+- waitForAnimationToEnd
+- takeScreenshot: F<n>-result
+
+# Persistence (HG7): kill and relaunch WITHOUT clearState — the data must survive.
+- launchApp:
+    stopApp: true
+- runFlow: ../subflows/ready.yaml
+- assertVisible: "<realistic value>"
+- takeScreenshot: F<n>-restart
+
+# Resume (R3) — keep in at least one flow: background, foreground, same screen and state.
+- pressKey: home
+- launchApp:
+    stopApp: false
+- assertVisible: "<realistic value>"

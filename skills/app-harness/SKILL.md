@@ -207,7 +207,9 @@ Follow the `pipeline-log.md` schema in `docs/harness-protocol.md` Section 6.
 ## Dispatch Loop
 
 After bootstrap (or when a usable `state.md` already exists and `--resume` was not passed), enter
-the dispatch loop.
+the dispatch loop. If this session is not running on Sonnet, say once: "Tip: run the harness on
+Sonnet (`/model`) — phases pull in Haiku and Opus for bounded steps (protocol §8)." Then continue;
+never wait for a model change.
 
 ### Reading `next_role`
 

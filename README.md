@@ -25,6 +25,8 @@ screenshot de-duplication, review-submission API, age-rating declarations) are b
 | Backend | local-first; plan may opt into REST or Firebase when the PRD needs it |
 | Monetization | AdMob, all formats (banner / native / interstitial / app-open / rewarded), then asks about IAP / subscriptions |
 | Deploy | fastlane (TestFlight + Play internal track), templates included |
+| Models | Run the session on Sonnet; phases pull in Haiku (competitor mining, inventory, small-diff review) and Opus (repeat-failure root cause, store-policy review) for bounded steps — protocol §8 |
+| Device tests | Maestro flows committed in `.maestro/` — re-run every round (light / dark / largest text, iOS + Android) and kept as regression |
 
 In **update mode** the harness follows the existing project's architecture instead of migrating it.
 
@@ -64,7 +66,7 @@ After editing the plugin source, re-sync the cached copy:
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--audit [path]` | — | Update mode for an existing Flutter project (default: current directory) |
-| `--strict` | off | Evaluator adds quality scoring + a 6-agent edge-case sweep |
+| `--strict` | off | Evaluator adds quality scoring + a 6-agent edge-case sweep (device roles run one at a time) |
 | `--rounds N` | 3 | Maximum generator–evaluator rounds |
 | `--skip-research` | off | Take the idea verbatim (4.2/4.3 store check still runs) |
 | `--skip-monetize` | off | No ads, no IAP |
@@ -76,7 +78,7 @@ After editing the plugin source, re-sync the cached copy:
 Run from (or point at) an existing Flutter project. The audit is read-only on app code:
 
 1. Inventory + baseline — `flutter analyze` / `flutter test` counts, app launched and every flow
-   screenshotted as the regression reference.
+   written as a Maestro flow + screenshotted as the regression reference.
 2. Core idea reverse-engineered from code, README and store listing — you confirm it; it stays **locked**.
 3. Gap report against the gates (crash/data-loss/store-rejection risks first) + 2-4 extension ideas
    from competitor reviews.
@@ -104,7 +106,7 @@ By default, after QA passes the harness **pauses so you can run and approve the 
 | `app-harness-design` | Design tokens (light + dark), screen specs with all states, icon/splash plan |
 | `app-harness-contract` | Hard Gates 1–8 + robustness gates R1–R12 + functional criteria |
 | `app-harness-generator` | Build in 3 gated sub-phases (scaffold → data/state → UI/polish) |
-| `app-harness-evaluator` | Skeptical QA — runs the app, walks every flow, checks restart persistence |
+| `app-harness-evaluator` | Skeptical QA — runs the Maestro suite every round (flows, restart persistence, dark mode, largest text), saves each new bug as a regression flow |
 | `app-harness-monetize` | AdMob strategy + consent + code; optional IAP / subscriptions |
 | `app-harness-build` | Signing, fastlane config, IPA → TestFlight, AAB → internal track |
 | `app-harness-screenshot` | Store screenshots per locale with seeded demo data, ASO metadata |

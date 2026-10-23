@@ -116,6 +116,12 @@ When `current_round` is greater than 1:
    `app-harness-generator: feedback file for round <N-1> not found — cannot determine fixes`
    (see Error handling).
 2. Parse `## Failed Criteria`. Each entry names a criterion, a location, and the prescribed fix.
+   **Escalate a repeat failure (protocol §8):** a criterion ID that also failed in
+   `round-<N-2>-qa.md` means the last fix missed the root cause. Before touching code, spawn one
+   read-only `general-purpose` agent with `model: opus`; give it both feedback files, the diff of
+   the previous fix (`git log --oneline` → its `fix(...)` commit), and the failing flow's output /
+   device log, and ask only for the root cause and the smallest fix location. Reproduce its
+   diagnosis (open the file:line, re-run the flow), then make the fix yourself.
 3. Make only the minimum change for each listed fix. Do NOT redesign or refactor areas that were
    not listed.
 4. One commit per discrete fix: `fix(<feature|scope>): <criterion id> <what changed>`. On
@@ -123,6 +129,10 @@ When `current_round` is greater than 1:
    already landed.
 5. Run the 5c HARD GATE (the full command set plus every 5c check the fixes touched). When green,
    write `checkpoint: 5c`, then write the handoff.
+6. A fix item that cites a `.maestro/flows/regress_r<N-1>_*.yaml` flow is done only when that flow
+   passes (`.maestro/suite.sh <device> round-<N>-gen <mode> <flow>`), and that flow (the evaluator
+   leaves it untracked) is committed with the fix. Fix the app, never the flow: regress flows and
+   the evaluator's assertions are not weakened, skipped, or deleted.
 
 ---
 
@@ -257,7 +267,7 @@ lib/
     presentation/                screens, widgets, notifiers (5b/5c)
   l10n/app_<locale>.arb          one per config.locales entry
 test/                            mirrors lib/ (test/features/<feature>/…)
-integration_test/app_test.dart   primary flow (5c.8)
+.maestro/                        device flows, one per PRD primary flow (5c.8)
 ```
 
 Add `lib/features/<feature>/domain/` (or `lib/core/domain/`) only when logic is shared across
@@ -835,12 +845,26 @@ grep -rn "withNoTextScaling\|TextScaler.noScaling\|textScaleFactor:" lib --inclu
   (localization delegates, real theme). It asserts the empty state, finds the primary action by
   tooltip, and checks Flutter's tap-target / label / contrast guidelines. It taps the action,
   asserts the outcome, and pumps at 200% text scale with no overflow.
-- **Integration test:** copy `<plugin-templates>/integration_test.dart.template` →
-  `integration_test/app_test.dart`. It drives the PRD's primary flow from a fresh install, asserts
-  the result is visible, and reads it back through the repository (stored). `flutter test` does
-  not run `integration_test/`. Run it on a booted simulator/emulator when one exists:
-  `flutter test integration_test -d <device-id>`. Otherwise record that it was not run under Known
-  Issues (the evaluator runs it).
+- **Device flows (Maestro)** — the suite the evaluator re-runs every round (protocol §3 Device test
+  suite; pitfalls: `docs/app-gotchas.md` → Device flow tests (Maestro)):
+  ```bash
+  mkdir -p .maestro/flows .maestro/subflows
+  cp <plugin-templates>/maestro/suite.sh.template .maestro/suite.sh && chmod +x .maestro/suite.sh
+  [ -e .maestro/subflows/ready.yaml ] || cp <plugin-templates>/maestro/ready.yaml.template .maestro/subflows/ready.yaml
+  ```
+  Then one `.maestro/flows/F<n>_<slug>.yaml` per PRD primary flow from
+  `<plugin-templates>/maestro/flow.yaml.template`: fresh install, the flow exactly as a user does
+  it with an assert after every action, kill + relaunch + assert, and resume in at least one flow.
+  Fill `<__BUNDLE_ID__>` and every `<...>`; selectors are regex alternations over every locale's ARB
+  string. Tag main screens `ui`. Build the debug app, install it (`docs/app-gotchas.md`), and run
+  `.maestro/suite.sh <device-id> round-<N>-gen` until every flow passes, then
+  `.maestro/suite.sh <device-id> round-<N>-gen-xxxl xxxl` — a 200% widget test passes layouts
+  that still clip on a real phone.
+- **Integration test — only when `command -v maestro` prints nothing:** copy
+  `<plugin-templates>/integration_test.dart.template` → `integration_test/app_test.dart`. It drives
+  the PRD's primary flow from a fresh install, asserts the result is visible, and reads it back
+  through the repository (stored). Run it with `flutter test integration_test -d <device-id>` and
+  note under Known Issues that Maestro was unavailable.
 
 ### 5c.9 App branding: icon, splash, display name (R5)
 
@@ -1075,10 +1099,12 @@ Protocol §1, §3 (update-mode gate overrides), §7 rule 11. The project already
 
 ## Self-evaluation and Handoff
 
-After the 5c HARD GATE passes, smoke-run the app if a simulator/emulator is booted:
-`flutter run -d <id>`, covering cold start + the primary flow + a restart, with the console free of
-errors. This fills Hard Gate 8 and Environment Detection. If no device is available, write
-"none — evaluator runs it" and mark Hard Gate 8 PARTIAL.
+After the 5c HARD GATE passes, run the device suite if a simulator/emulator is booted:
+`.maestro/suite.sh <id> round-<N>-gen` (then `xxxl`) — every flow green, no `FAIL console` /
+`FAIL log` line. This fills Hard Gates 7–8 and Environment Detection. HG7 / HG8 are DONE only with
+that run's `flows: <passed>/<total>` line and its `round-<N>-gen-device.log` path in Notes — unit
+or widget tests alone are never "DONE (tests)". If no device is available, write
+"none — evaluator runs it" and mark HG7 and HG8 PARTIAL.
 
 ### Write handoff/round-N-gen.md
 
@@ -1116,7 +1142,7 @@ matches the contract.
 | R8 Store graphics | DONE / PARTIAL / FAIL | play_icon + feature_graphic generated; iOS screenshots in screenshot phase |
 | R9 Persistence & data safety | DONE / PARTIAL / FAIL | storage choice, schema version, durable restore or Auto Backup |
 | R10 Accessibility | DONE / PARTIAL / FAIL | … |
-| R11 Test depth | DONE / PARTIAL / FAIL | unit / widget / integration counts; integration run? |
+| R11 Test depth | DONE / PARTIAL / FAIL | unit / widget counts; Maestro flows passed/total (`suite.sh` line) |
 | R12 Permissions & privacy | DONE / N/A / PARTIAL / FAIL | N/A: no runtime permission (ATT added by monetize) |
 | <app-specific functional criterion> | DONE / PARTIAL / FAIL | … |
 
@@ -1130,6 +1156,10 @@ matches the contract.
 <last 20 lines of flutter test output>
 \`\`\`
 
+\`\`\`
+<.maestro/suite.sh summary line + any FAIL lines, or "not run — no device">
+\`\`\`
+
 ## Environment Detection
 
 - Flutter version: <output of `flutter --version`>
@@ -1138,7 +1168,7 @@ matches the contract.
 
 ## Known Issues
 
-<!-- Known issues or deferred items (e.g. integration test not run, design source unreachable). "none" if clean. -->
+<!-- Known issues or deferred items (e.g. device suite not run, design source unreachable). "none" if clean. -->
 ```
 
 Fill every section with actual output and real assessments. Leave no placeholder text.

@@ -136,7 +136,7 @@ with the app's real driving code:
 
 - Replace `<__APP_SLUG__>` in every import with the package name (`name:` in `pubspec.yaml` — the
   `app_slug` with hyphens converted to underscores).
-- **Boot like `integration_test/app_test.dart`** (from `integration_test.dart.template`): a
+- **Boot the way `<plugin-templates>/integration_test.dart.template` does**: a
   `ProviderContainer` with `storageOverrides()`, pumped as `UncontrolledProviderScope` around `App`.
   Never call `app.main()` / `bootstrap()` — they replace `FlutterError.onError` and the test binding
   fails the test at teardown. A `mode: update` app without `storageOverrides()` / `App`: replicate the
